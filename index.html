@@ -3,19 +3,29 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <meta name="description" content="An interactive canvas garden with flowers and butterflies that you can control." />
-  <title>Enchanted Garden &middot; Flowers &amp; Butterflies</title>
+  <meta name="description" content="An interactive 3D garden with blossoming trees, birds you can feed, watering and butterflies." />
+  <title>Enchanted Garden &middot; 3D</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style3d.css" />
+  <script>
+    window.__err = [];
+    window.addEventListener('error', function (e) { window.__err.push(e.message + ' @' + e.lineno); });
+    window.addEventListener('unhandledrejection', function (e) { window.__err.push('rejection: ' + e.reason); });
+  </script>
 </head>
 <body>
-  <canvas id="garden" aria-label="Interactive garden with flowers and butterflies"></canvas>
+  <canvas id="garden" aria-label="Interactive 3D garden with flowers, trees and birds"></canvas>
 
   <header id="hud">
-    <h1>&#127802; Enchanted Garden</h1>
+    <h1>&#127800; Enchanted Garden</h1>
     <div class="stats">
-      <span class="chip" title="flowers in the garden">&#127804; <b id="statFlowers">0</b></span>
+      <span class="chip" title="overall plant health">&#127793; <b id="statHealth">100%</b></span>
+      <span class="chip" title="water left in the watering can">&#128167; <b id="statWater">8</b></span>
+      <span class="chip" title="bird food in your pocket">&#128038; <b id="statFood">4</b></span>
+      <span class="chip" title="flowers growing">&#127800; <b id="statFlowers">0</b></span>
       <span class="chip" title="butterflies flying">&#129419; <b id="statButterflies">0</b></span>
-      <span class="chip" title="flowers you picked">&#128090; <b id="statPicked">0</b></span>
+      <span class="chip" title="flowers you picked">&#127804; <b id="statPicked">0</b></span>
+      <span class="chip" title="garden goals completed">&#11088; <b id="statProgress">0%</b></span>
       <span class="chip" title="time of day">&#128337; <b id="statTime">09:00</b></span>
       <span class="chip" id="statWeather">&#9728;&#65039; Clear</span>
     </div>
@@ -36,6 +46,12 @@
       </select>
     </div>
 
+    <div class="row tools">
+      <button id="btnToolHand" class="tool on" type="button" title="pick flowers, plant, inspect (1)">&#9995;&#65039; Hand</button>
+      <button id="btnToolWater" class="tool" type="button" title="water plants, refill at the pond (2)">&#128167; Water</button>
+      <button id="btnToolFood" class="tool" type="button" title="place food for the birds (3)">&#128038; Food</button>
+    </div>
+
     <div class="buttons">
       <button id="btnFlower" type="button">&#127793; Plant</button>
       <button id="btnButterfly" type="button">&#129419; Butterfly</button>
@@ -45,16 +61,24 @@
       <button id="btnClear" type="button">&#129533; Clear</button>
     </div>
 
+    <div class="row misc">
+      <button id="btnMute" type="button">&#128266; Sound</button>
+    </div>
+
     <p class="hint" id="hint">
-      Move the mouse to gather butterflies &middot; click the grass to plant &middot;
-      click a flower to pick it &middot; right-click to remove
+      Drag to look around &middot; walk with WASD &middot; hover an object and press
+      E to interact &middot; click grass to plant
     </p>
   </aside>
 
+  <div id="prompt" hidden></div>
+
   <footer id="keys">
     <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>
+    <span><kbd>drag</kbd> look</span>
     <span><kbd>Space</kbd> plant</span>
-    <span><kbd>E</kbd> water</span>
+    <span><kbd>E</kbd> interact</span>
+    <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> tools</span>
     <span><kbd>B</kbd> butterfly</span>
     <span><kbd>N</kbd> day/night</span>
     <span><kbd>R</kbd> rain</span>
@@ -62,6 +86,11 @@
     <span><kbd>P</kbd> pause</span>
   </footer>
 
-  <script src="script.js"></script>
+  <div id="touch" hidden>
+    <div id="stick"><div id="stickNub"></div></div>
+    <button id="btnAct" type="button" aria-label="interact">&#10549;</button>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
 </body>
 </html>

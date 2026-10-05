@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>qa3d</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style3d.css" />
+  <script>
+    window.__err = [];
+    window.addEventListener('error', function (e) { window.__err.push(e.message + ' @' + e.lineno); });
+    window.addEventListener('unhandledrejection', function (e) { window.__err.push('rejection: ' + e.reason); });
+  </script>
+</head>
+<body>
+  <canvas id="garden"></canvas>
+  <header id="hud"><h1>x</h1><div class="stats">
+    <span class="chip"><b id="statHealth">0</b></span>
+    <span class="chip"><b id="statWater">0</b></span>
+    <span class="chip"><b id="statFood">0</b></span>
+    <span class="chip"><b id="statFlowers">0</b></span>
+    <span class="chip"><b id="statButterflies">0</b></span>
+    <span class="chip"><b id="statPicked">0</b></span>
+    <span class="chip"><b id="statProgress">0</b></span>
+    <span class="chip"><b id="statTime">0</b></span>
+    <span class="chip" id="statWeather">0</span>
+  </div></header>
+  <aside id="panel">
+    <select id="seedSelect"><option value="random">r</option><option value="rose">rose</option></select>
+    <button id="btnToolHand"></button><button id="btnToolWater"></button><button id="btnToolFood"></button>
+    <button id="btnFlower"></button><button id="btnButterfly"></button><button id="btnRain"></button>
+    <button id="btnDayNight"></button><button id="btnPause"></button><button id="btnClear"></button>
+    <button id="btnMute"></button>
+    <p id="hint"></p>
+  </aside>
+  <div id="prompt" hidden></div>
+  <div id="touch" hidden><div id="stick"><div id="stickNub"></div></div><button id="btnAct"></button></div>
+  <pre id="qaout" style="position:fixed;left:0;top:0;z-index:99;color:#0f0;background:#000c;font:11px monospace;max-height:80vh;overflow:auto;padding:6px;white-space:pre-wrap"></pre>
+
+  <script type="module" src="/src/main.js"></script>
+  <script type="module">
+    import * as THREE from 'three';
+
+    /* rAF never fires under headless --dump-dom (verified), so every
+       check below drives the simulation with direct update() calls. */
+    var L = [], PASS = 0, FAIL = 0;
+    function ok(name, cond, extra) {
+      if (cond) { PASS++; L.push('PASS  ' + name); }
+      else { FAIL++; L.push('FAIL  ' + name + (extra !== undefined ? '   [' + extra + ']' : '')); }
+    }
+    function down(k) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+    }
+    function up(k) {
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: k, bubbles: true }));
+    }
+    function tap(k) { down(k); up(k); }   /* one-shot actions: E B P 1 2 3 */
+    function hold(k, frames, step) {
+      /* hold a key while pumping controller updates -- mirrors a real press */
+      down(k);
+      for (var i = 0; i < frames; i++) {
+        window.__gardenApp.controller.update(step || 1 / 60);
+      }
+      up(k);
+    }
+    function click(id) { document.getElementById(id).click(); }
+    function rand2() { return Math.random() * 40 - 20; }
+    var reported = false;
+    function report() {
+      if (reported) return;
+      reported = true;
+      document.getElementById('qaout').textContent =
+        'RESULT ' + PASS + '/' + (PASS + FAIL) + '  (fail=' + FAIL + ')\n' + L.join('\n');
+      document.title = (FAIL === 0 ? 'ALLPASS ' : 'FAILURES=' + FAIL + ' ') + PASS + '/' + (PASS + FAIL);
+    }
+
+    window.__ok = ok;
+    window.__report = report;
+
+    /* sections are appended below */
+    function section1(app) {
+      var g = window.garden;
+      ok('boot: no JS errors', window.__err.length === 0, window.__err.join(' | '));
+      ok('boot: garden api present', !!g);
+      ok('boot: flowers seeded', app.flowers.flowers.length >= 20, app.flowers.flowers.length);
+      ok('boot: butterflies seeded', app.butterflies.list.length >= 5, app.butterflies.list.length);
+      ok('boot: birds spawned', app.birds.birds.length === 8, app.birds.birds.length);
+      ok('boot: trees built', app.trees.trees.length >= 8, app.trees.trees.length);
+      ok('boot: player inside fence', app.terrain.inBounds(app.player.pos.x, app.player.pos.z));
+
+      ok('api: hour getter', typeof g.hour === 'number', g.hour);
+      ok('api: toggleRain returns target', g.toggleRain() === 1, g.rainTarget);
+      g.toggleRain();
+      ok('api: seedType settable', (g.seedType = 'rose') === 'rose');
+      ok('api: groundAt returns number', isFinite(g.groundAt(0, 0)));
+
+      var before = app.flowers.flowers.length;
+      var f = g.plant(3, 3, 'rose');
+      ok('plant: creates flower', !!f);
+      ok('plant: count grew', app.flowers.flowers.length === before + 1);
+      ok('plant: has health/growth/waterLevel', !!f && f.health === 1 && typeof f.growth === 'number' && typeof f.waterLevel === 'number');
+      ok('plant: watered() callable', !!f && typeof f.watered === 'function');
+      if (f) {
+        f.watered();
+        ok('plant: watered() raises waterLevel', f.waterLevel > 0.5, f.waterLevel.toFixed(2));
+        app.flowers.update(2);
+        ok('plant: growth advanced', f.growth > 0.08, f.growth.toFixed(3));
+        var pickedBefore = g.picked;
+        app.flowers.pick(f);
+        ok('pick: counted', g.picked === pickedBefore + 1, g.picked);
+        ok('pick: removed from list', app.flowers.flowers.indexOf(f) === -1);
+      }
+
+      for (var i = 0; i < 200; i++) app.flowers.plant(rand2(), rand2(), 'rose');
+      ok('capacity: capped at maxFlowers', app.flowers.flowers.length <= 90, app.flowers.flowers.length);
+
+      click('btnClear');
+      ok('clear: empties garden', app.flowers.flowers.length === 0, app.flowers.flowers.length);
+      for (var j = 0; j < 12; j++) app.flowers.plant(3 + (j % 4), 3 + Math.floor(j / 4));
+      ok('clear: can replant', app.flowers.flowers.length === 12, app.flowers.flowers.length);
+    }
+    window.__section1 = section1;
+
+    function section2(app) {
+      click('btnToolWater');
+      ok('tool: water selected', app.tool === 'water', app.tool);
+      ok('tool: can visible', app.player.can.visible === true);
+      click('btnToolHand');
+      ok('tool: hand selected', app.tool === 'hand');
+      ok('tool: can hidden', app.player.can.visible === false);
+      ok('tool: button .on marks active', document.getElementById('btnToolHand').classList.contains('on'));
+
+      var fl = app.flowers.flowers[0];
+      app.watering.amount = 8;
+      var w0 = fl.waterLevel;
+      app._waterPlant(fl);
+      ok('water: consumed a can unit', app.watering.amount === 7, app.watering.amount);
+      ok('water: plant got wetter', fl.waterLevel > w0, fl.waterLevel.toFixed(2));
+      app.watering.amount = 0;
+      ok('water: empty can refuses', app._waterPlant(fl) === false);
+      var refilled = app.watering.refill(app.terrain.pondCenter);
+      ok('water: refill from pond works', refilled === true && app.watering.amount === app.watering.max, app.watering.amount);
+
+      app.feeding.food = 4;
+      app.feeding.clearPiles();
+      var placed = app._placeFood(-3, 5);
+      var pile = app.feeding.piles.length ? app.feeding.piles[app.feeding.piles.length - 1] : null;
+      ok('feed: pile placed', placed === true && !!pile && pile.amount > 0 && app.feeding.piles.length === 1,
+        'piles=' + app.feeding.piles.length);
+      ok('feed: food decremented', app.feeding.food === 3, app.feeding.food);
+      ok('feed: bird can find food', !!pile && app.feeding.findFoodNear(pile.pos.clone(), 50) === pile);
+      var amount0 = pile ? pile.amount : -1;
+      ok('feed: bite reduces pile', !!pile && app.feeding.eatOne(pile) === true && pile.amount === amount0 - 1,
+        'amount=' + amount0);
+      if (pile) { while (pile.amount > 0) app.feeding.eatOne(pile); }
+      ok('feed: pile consumed and removed', app.feeding.piles.length === 0, app.feeding.piles.length);
+      app.feeding.food = 0;
+      ok('feed: refuses when empty', app._placeFood(4, 4) === false);
+    }
+    window.__section2 = section2;
+
+    function section3(app) {
+      var valid = ['FLYING', 'LANDING', 'LANDED', 'SEEKING_FOOD', 'EATING', 'RETURNING'];
+      var seen = {};
+      var B = app.birds.birds;
+      for (var s = 0; s < B.length; s++) seen[B[s].brain.state] = true;
+      ok('birds: have a valid state', Object.keys(seen).length > 0, Object.keys(seen).join(','));
+      ok('birds: all state names valid', Object.keys(seen).every(function (k) { return valid.indexOf(k) >= 0; }), Object.keys(seen).join(','));
+      ok('birds: geometry shared', B[0].bird.body.geometry === B[1].bird.body.geometry);
+
+      app.feeding.food = 6;
+      app._placeFood(app.player.pos.x + 2, app.player.pos.z + 2);
+      var fp = app.feeding.piles.length ? app.feeding.piles[app.feeding.piles.length - 1] : null;
+      for (var f2 = 0; f2 < 300; f2++) app.update(1 / 60);
+      var near = app.birds.birds.filter(function (e) {
+        return e.brain.state === 'SEEKING_FOOD' || e.brain.state === 'EATING' ||
+               e.brain.state === 'LANDING' || e.brain.state === 'LANDED';
+      }).length;
+      ok('birds: react to food (some approached)', near > 0, near);
+      ok('birds: pile shrank or was eaten', !fp || fp.amount <= 4, fp && fp.amount);
+      var above = app.birds.birds.every(function (e) {
+        return e.bird.pos.y > app.terrain.heightAt(e.bird.pos.x, e.bird.pos.z) - 0.2;
+      });
+      ok('birds: stay above ground', above);
+      var wingFlap = B[0].bird.wingL.rotation.z !== 0 || B[0].bird.flapPhase > 0;
+      ok('birds: wing animation active', wingFlap);
+    }
+    window.__section3 = section3;
+
+    function section4(app) {
+      /* movement is camera-relative third-person: W walks toward the far
+         side, S back toward the spawn. Assert distance, not a bare axis. */
+      app.player.pos.set(0, app.terrain.heightAt(0, 30), 30);
+      var p0x = app.player.pos.x, p0z = app.player.pos.z;
+      hold('w', 30);
+      var dw = Math.hypot(app.player.pos.x - p0x, app.player.pos.z - p0z);
+      ok('player: W walks forward', dw > 0.3, dw.toFixed(3));
+      var midx = app.player.pos.x, midz = app.player.pos.z;
+      hold('s', 60);
+      var backtrack = Math.hypot(midx - p0x, midz - p0z) - Math.hypot(app.player.pos.x - p0x, app.player.pos.z - p0z);
+      ok('player: S walks back', backtrack > 0.2 || Math.hypot(app.player.pos.x - p0x, app.player.pos.z - p0z) < dw,
+        'w=' + dw.toFixed(2) + ' now=' + Math.hypot(app.player.pos.x - p0x, app.player.pos.z - p0z).toFixed(2));
+      ok('player: stays inside fence', app.terrain.inBounds(app.player.pos.x, app.player.pos.z));
+      ok('player: stands on terrain', Math.abs(app.player.pos.y - app.terrain.heightAt(app.player.pos.x, app.player.pos.z)) < 0.001);
+      ok('player: state machine valid', ['idle', 'walking', 'interacting'].indexOf(app.player.state) >= 0, app.player.state);
+
+      /* walk hard into the fence and the pond: neither may be escaped */
+      app.player.pos.set(0, 0, 44);
+      hold('w', 400);
+      ok('player: fence contains the walk', app.terrain.inBounds(app.player.pos.x, app.player.pos.z), Math.hypot(app.player.pos.x, app.player.pos.z).toFixed(1));
+      app.player.pos.set(app.terrain.pondCenter.x, 0, app.terrain.pondCenter.z + app.terrain.pondRadius + 2);
+      hold('s', 400);
+      var pd = Math.hypot(app.player.pos.x - app.terrain.pondCenter.x, app.player.pos.z - app.terrain.pondCenter.z);
+      ok('player: pond blocks the walk', pd > app.terrain.pondRadius, pd.toFixed(2));
+      app.player.pos.set(0, app.terrain.heightAt(0, 30), 30);
+
+      var yaw0 = app.scene3d.yaw;
+      app.scene3d.yaw -= 0.8;
+      app.scene3d.applyCamera();
+      ok('camera: orbit moves the eye', app.scene3d.yaw !== yaw0);
+      ok('camera: eye above the lawn', app.scene3d.camera.position.y > 0.5, app.scene3d.camera.position.y.toFixed(2));
+
+      ok('interact: registry populated', app.interactions.entries.length >= 6, app.interactions.entries.length);
+      ok('interact: ground entry present', !!app._entryGround);
+      ok('interact: flower entry present', !!app._entryFlower);
+      ok('interact: prompts return text or null', app.interactions.entries.every(function (e) {
+        return typeof e.getPrompt === 'function' &&
+               (e.getPrompt('hand') === null || typeof e.getPrompt('hand') === 'string');
+      }));
+      ok('interact: calling it is safe', typeof app._doInteract() === 'boolean');
+      ok('interact: prompt element exists', !!document.getElementById('prompt'));
+
+      var bf0 = app.butterflies.list.length;
+      tap('b');
+      ok('keys: B adds a butterfly', app.butterflies.list.length === bf0 + 1, app.butterflies.list.length);
+      tap('p');
+      ok('keys: P pauses', app.paused === true);
+      tap('p');
+      ok('keys: P resumes', app.paused === false);
+      tap('1');
+      ok('keys: 1 selects hand', app.tool === 'hand', app.tool);
+      tap('2');
+      ok('keys: 2 selects water', app.tool === 'water', app.tool);
+      tap('3');
+      ok('keys: 3 selects food', app.tool === 'food', app.tool);
+      click('btnToolHand');
+
+      click('btnPause');
+      ok('pause: paused on', app.paused === true);
+      app._tickUI(performance.now() + 5000);
+      ok('pause: button shows Resume', document.getElementById('btnPause').textContent.indexOf('Resume') > -1,
+        document.getElementById('btnPause').textContent);
+      var hourPinned = window.garden.hour;
+      app.frame(performance.now() + 1000);
+      ok('pause: clock frozen', window.garden.hour === hourPinned, hourPinned + ' -> ' + window.garden.hour);
+      click('btnPause');
+      ok('pause: resumed', app.paused === false);
+    }
+    window.__section4 = section4;
+
+    function section5(app) {
+      var g = window.garden;
+
+      /* day/night: toggle tweens the clock, button + stats follow */
+      var hour0 = app.scene3d.hour;
+      tap('n');
+      app.update(0.1);
+      for (var dn = 0; dn < 40; dn++) app.update(1 / 20);
+      ok('daynight: N moves the clock', Math.abs(app.scene3d.hour - hour0) > 0.3,
+        hour0.toFixed(2) + ' -> ' + app.scene3d.hour.toFixed(2));
+      ok('daynight: sky palette follows the clock', (function () {
+        var before = app.scene3d.skyUniforms.top.value.getHexString();
+        app.scene3d.hour = (app.scene3d.hour + 8) % 24;
+        app.scene3d.hourTarget = null;
+        app.scene3d.updateClock(0.1);
+        return app.scene3d.skyUniforms.top.value.getHexString() !== before;
+      })(), '#' + app.scene3d.skyUniforms.top.value.getHexString());
+      tap('n');
+      for (var dn2 = 0; dn2 < 40; dn2++) app.update(1 / 20);
+      ok('daynight: HUD time chip updates', /^\d\d:\d\d$/.test(document.getElementById('statTime').textContent),
+        document.getElementById('statTime').textContent);
+
+      /* rain: button toggles target, blend chases it, audio survives */
+      var rb0 = app.rain.blend;
+      tap('r');
+      for (var r1 = 0; r1 < 120; r1++) app.update(1 / 30);
+      ok('rain: R raises the blend', app.rain.blend > rb0 + 0.2, rb0.toFixed(2) + ' -> ' + app.rain.blend.toFixed(2));
+      ok('rain: weather chip leaves Clear', (function () {
+        app._tickUI(performance.now() + 5000);
+        return document.getElementById('statWeather').textContent.indexOf('Clear') === -1;
+      })(), document.getElementById('statWeather').textContent);
+      tap('r');
+      for (var r2 = 0; r2 < 200; r2++) app.update(1 / 30);
+      ok('rain: blend settles back near zero', app.rain.blend < 0.15, app.rain.blend.toFixed(3));
+    }
+    window.__section5 = section5;
+
+    function section6(app) {
+      var g = window.garden;
+
+      /* feeding behaviour: a placed pile is detected and eaten down */
+      click('btnClear');
+      app.feeding.clearPiles();
+      app.feeding.food = 6;
+      g.fastForward(0.5);
+      var placed6 = app._placeFood(0, 0);
+      var pile = app.feeding.piles.length ? app.feeding.piles[app.feeding.piles.length - 1] : null;
+      ok('feed2: pile placed at origin', placed6 === true && !!pile, app.feeding.piles.length);
+      var pileX = pile ? pile.pos.x : 0, pileZ = pile ? pile.pos.z : 0;
+      ok('feed2: birds notice it', (function () {
+        for (var i = 0; i < 600; i++) app.update(1 / 30);
+        return app.birds.birds.some(function (e) {
+          var nearPile = Math.hypot(e.bird.pos.x - pileX, e.bird.pos.z - pileZ) < 6;
+          return ['SEEKING_FOOD', 'LANDING', 'LANDED', 'EATING', 'RETURNING'].indexOf(e.brain.state) >= 0 || nearPile;
+        });
+      })(), app.birds.birds.map(function (e) { return e.brain.state; }).join(','));
+      for (var e2 = 0; e2 < 900; e2++) app.update(1 / 30);
+      ok('feed2: birds ate something', app.feeding.totalFed > 0, app.feeding.totalFed);
+      ok('feed2: spent pile removed', app.feeding.piles.length === 0, app.feeding.piles.length);
+
+      /* audio: synthesised, muted by default-safe, toggle flips label */
+      ok('audio: all one-shots callable while silent', (function () {
+        try {
+          app.audio.chirp(); app.audio.water(); app.audio.feed(); app.audio.munch();
+          app.audio.pick(); app.audio.plant(); app.audio.pop(); app.audio.splash();
+          app.audio.refill(); app.audio.update(0.1, { wind: 0.5, rain: 0.5 });
+          return true;
+        } catch (err) { window.__audioErr = String(err); return false; }
+      })(), window.__audioErr || 'ok');
+      var muteLabel0 = document.getElementById('btnMute').textContent;
+      click('btnMute');
+      ok('audio: mute toggles', app.audio.muted === true, app.audio.muted);
+      ok('audio: mute label flips', document.getElementById('btnMute').textContent !== muteLabel0,
+        document.getElementById('btnMute').textContent);
+      click('btnMute');
+      ok('audio: unmute restores', app.audio.muted === false);
+
+      /* URL fast-forward parity with the classic page */
+      ok('url: fastForward advances the clock', (function () {
+        var h0 = app.scene3d.hour;
+        g.fastForward(20);
+        return Math.abs(app.scene3d.hour - h0) > 0.2;
+      })());
+    }
+    window.__section6 = section6;
+
+    function section7(app) {
+      var g = window.garden;
+
+      /* 60s soak: error-free, populations sane, frame cost sane */
+      click('btnClear');
+      for (var p = 0; p < 10; p++) app._plantAt(rand2(), rand2());
+      tap('r');
+      var errs0 = window.__err.length;
+      var t0 = performance.now();
+      var frames = 0;
+      for (var s = 0; s < 60; s++) {
+        for (var k = 0; k < 20; k++) { app.update(1 / 20); frames++; }
+      }
+      var ms = performance.now() - t0;
+      ok('soak: no errors over 60 sim-seconds', window.__err.length === errs0,
+        window.__err.slice(errs0).join(' | '));
+      ok('soak: flowers bounded', app.flowers.flowers.length <= 90, app.flowers.flowers.length);
+      ok('soak: butterflies bounded', app.butterflies.list.length <= 24, app.butterflies.list.length);
+      ok('soak: birds all alive', app.birds.birds.length >= 6, app.birds.birds.length);
+      ok('soak: sim runs faster than 10x realtime', ms < 6000, Math.round(ms) + 'ms for ' + frames + ' frames');
+      tap('r');
+      for (var c = 0; c < 60; c++) app.update(1 / 30);
+
+      /* HUD chips all live */
+      app._refreshUI();
+      ok('hud: chips populated', (function () {
+        var ids = ['statHealth', 'statWater', 'statFood', 'statFlowers', 'statButterflies', 'statPicked', 'statProgress', 'statTime'];
+        return ids.every(function (id) {
+          var t = document.getElementById(id).textContent;
+          return t !== null && t !== undefined && String(t).length > 0;
+        });
+      })());
+      ok('hud: progress chip is a percent', /^\d+%$/.test(document.getElementById('statProgress').textContent),
+        document.getElementById('statProgress').textContent);
+    }
+    window.__section7 = section7;
+
+    /* ---- runner: rAF never fires headless, so drive update() directly. */
+    window.__runQA = function () {
+      var app = window.__gardenApp;
+      try {
+        section1(app);
+        window.__section2(app);
+        window.__section3(app);
+        window.__section4(app);
+        section5(app);
+        section6(app);
+        section7(app);
+      } catch (err) {
+        FAIL++;
+        L.push('FAIL  harness threw: ' + ((err && err.stack) || err));
+      }
+      report();
+    };
+
+    /* boot is synchronous (module graph has no awaits), so poll briefly
+       for the app handle and run -- works under --dump-dom and live. */
+    (function wait(n) {
+      if (window.__gardenApp && window.garden) { window.__runQA(); return; }
+      if (n <= 0) {
+        FAIL++;
+        L.push('FAIL  app never booted: ' + window.__err.join(' | '));
+        report();
+        return;
+      }
+      setTimeout(function () { wait(n - 1); }, 50);
+    })(100);
+  </script>
+</body>
+</html>

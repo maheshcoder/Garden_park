@@ -1,0 +1,117 @@
+/* ===================================================================
+   Enchanted Garden 3D - UI that sits on top of the shared chrome in
+   style.css (tools, interaction prompt, touch controls).
+   =================================================================== */
+
+/* --------------------------------------------------- tool select --- */
+.row.tools {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.row.tools button { font-size: 11px; padding: 8px 2px; }
+.row.tools button.on {
+  background: rgba(126, 231, 135, 0.32);
+  border-color: rgba(160, 255, 170, 0.6);
+}
+
+.row.misc { margin-top: 8px; }
+.row.misc button { width: 100%; }
+
+/* panel never taller than the viewport (small laptops / phones) */
+#panel { max-height: calc(100vh - 32px); overflow-y: auto; }
+
+/* ------------------------------------------- interaction prompt --- */
+#prompt {
+  position: fixed;
+  left: 50%;
+  bottom: 74px;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(12, 18, 34, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  z-index: 30;
+  animation: promptIn 0.14s ease-out;
+}
+
+#prompt[hidden] { display: none; }
+#prompt kbd {
+  background: rgba(255, 255, 255, 0.16);
+  margin-right: 7px;
+}
+
+@keyframes promptIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ------------------------------------------------- touch inputs --- */
+#touch { display: none; }
+#touch.show { display: block; }
+
+#stick {
+  position: fixed;
+  left: 26px;
+  bottom: 26px;
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  background: rgba(12, 18, 34, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  touch-action: none;
+  z-index: 40;
+}
+
+#stickNub {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+}
+
+#btnAct {
+  position: fixed;
+  right: 26px;
+  bottom: 34px;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  font-size: 26px;
+  padding: 0;
+  background: rgba(126, 231, 135, 0.3);
+  border: 1px solid rgba(160, 255, 170, 0.55);
+  z-index: 40;
+  touch-action: none;
+}
+
+/* --------------------------------------------- responsive tweaks --- */
+@media (max-width: 760px) {
+  #prompt { bottom: 16px; font-size: 12px; }
+  .chip { font-size: 11px; padding: 3px 8px; }
+  .row.tools button { font-size: 10px; }
+}
+
+@media (max-width: 480px) {
+  #panel { width: 168px; }
+  .stats { gap: 4px; }
+}
