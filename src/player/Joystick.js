@@ -18,7 +18,10 @@ export class Joystick {
     this.pointerId = null;
 
     const coarse = matchMedia('(pointer: coarse)').matches;
-    if (coarse && this.root) this.root.hidden = false;
+    if (coarse && this.root) {
+      this.root.classList.add('show');
+      this.root.hidden = false;
+    }
 
     this._bindStick();
     this._bindAct();

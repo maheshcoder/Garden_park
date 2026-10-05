@@ -38,11 +38,12 @@ export class InteractionSystem {
   update(camera, playerPos, tool) {
     let best = null, bestScore = -Infinity;
 
-    /* 1) what is the camera pointing at? */
+    /* 1) what is the camera pointing at? (only entries with a mesh can be hit) */
     this._ray.setFromCamera(this._center, camera);
-    const hits = this._ray.intersectObjects(
-      this.entries.map((e) => e.object).filter(Boolean), true
-    );
+    const meshes = this.entries.map((e) => e.object).filter(Boolean);
+    const hits = meshes.length
+      ? this._ray.intersectObjects(meshes, true)
+      : [];
     let viaRay = null;
     if (hits.length) {
       viaRay = this._findByObject(hits[0].object);
@@ -97,10 +98,10 @@ export class InteractionSystem {
 
   /* used by pointer clicks: which entry is under this screen point? */
   pickAt(camera, ndcX, ndcY) {
+    const meshes = this.entries.map((e) => e.object).filter(Boolean);
+    if (!meshes.length) return null;
     this._ray.setFromCamera({ x: ndcX, y: ndcY }, camera);
-    const hits = this._ray.intersectObjects(
-      this.entries.map((e) => e.object).filter(Boolean), true
-    );
+    const hits = this._ray.intersectObjects(meshes, true);
     return hits.length ? this._findByObject(hits[0].object) : null;
   }
 }

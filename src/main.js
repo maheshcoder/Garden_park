@@ -17,15 +17,12 @@ import { Terrain } from './scene/Terrain.js';
 import { Trees } from './scene/Trees.js';
 import { Flowers, FLOWER_SPECS } from './scene/Flowers.js';
 import { Butterflies } from './entities/Butterflies.js';
-import { BirdManager } from './birds/BirdManager.js';
 import { Player } from './player/Player.js';
 import { PlayerController } from './player/PlayerController.js';
 import { Joystick } from './player/Joystick.js';
 import { InteractionSystem } from './systems/InteractionSystem.js';
 import { WateringSystem } from './systems/WateringSystem.js';
 import { FeedingSystem } from './systems/FeedingSystem.js';
-import { AudioSystem } from './systems/AudioSystem.js';
-import { Effects } from './systems/Effects.js';
 import { Rain } from './systems/Rain.js';
 
 const el = (id) => document.getElementById(id);
@@ -41,19 +38,16 @@ class GardenApp {
     this.terrain = new Terrain(this.scene3d.scene, tier);
     this.trees = new Trees(this.scene3d.scene, this.terrain);
     this.flowers = new Flowers(this.scene3d.scene, this.terrain);
-    this.effects = new Effects(this.scene3d.scene, tier);
     this.rain = new Rain(this.scene3d.scene, tier);
     this.butterflies = new Butterflies(this.scene3d.scene, this.terrain);
 
     /* ---- audio (silent until first gesture) ---- */
-    this.audio = new AudioSystem();
-    const wakeAudio = () => this.audio.ensure();
-    window.addEventListener('pointerdown', wakeAudio);
-    window.addEventListener('keydown', wakeAudio);
+    this.audio = null;
+    this._audioReady = this._loadAudio();
 
-    /* ---- gameplay systems ---- */
-    this.watering = new WateringSystem(this.effects, this.audio);
-    this.feeding = new FeedingSystem(this.scene3d.scene, this.terrain, this.effects, this.audio);
+    /* ---- gameplay systems (core) ---- */
+    this.watering = new WateringSystem(null, null); // effects/audio injected later
+    this.feeding = new FeedingSystem(this.scene3d.scene, this.terrain, null, null);
     this.interactions = new InteractionSystem();
 
     /* ---- player ---- */
@@ -61,14 +55,8 @@ class GardenApp {
     this.controller = new PlayerController(canvas, this.player, this.scene3d, this.terrain);
 
     /* ---- birds (world context shared with behaviour) ---- */
-    this.birds = new BirdManager(this.scene3d.scene, {
-      terrain: this.terrain,
-      trees: this.trees,
-      feeding: this.feeding,
-      audio: this.audio,
-      count: CONFIG.startBirds,
-      onFoodConsumed: () => this._say('The birds finished the seeds 🐦')
-    });
+    this.birds = null;
+    this._birdsReady = this._loadBirds();
 
     /* ---- tool + session state ---- */
     this.tool = 'hand';
@@ -76,9 +64,13 @@ class GardenApp {
     this.seedType = 'random';
     this.progress = { planted: 0, watered: 0, fed: 0 };
     this.time = 0;
-    this._sayT = 0;
+    this._rainbow = 0;
+    this._interactFlash = 0;
+    this._heldKeys = new Set();
+    this._v1 = new THREE.Vector3();
     this._defaultHint = el('hint').textContent;
     this._raycaster = new THREE.Raycaster();
+    this._ff = false;
 
     this.joystick = new Joystick(this.controller, () => this._doInteract());
 
@@ -88,6 +80,33 @@ class GardenApp {
     this._seedWorld();
     this._applyUrlParams();
     this._exposeApi();
+  }
+
+  async _loadAudio() {
+    const { AudioSystem } = await import('./systems/AudioSystem.js');
+    this.audio = new AudioSystem();
+    this.watering.audio = this.audio;
+    this.feeding.audio = this.audio;
+    const wakeAudio = () => this.audio.ensure();
+    window.addEventListener('pointerdown', wakeAudio);
+    window.addEventListener('keydown', wakeAudio);
+  }
+
+  async _loadBirds() {
+    const { BirdManager } = await import('./birds/BirdManager.js');
+    const { Effects } = await import('./systems/Effects.js');
+    this.effects = new Effects(this.scene3d.scene, this.tier);
+    this.watering.effects = this.effects;
+    this.feeding.effects = this.effects;
+
+    this.birds = new BirdManager(this.scene3d.scene, {
+      terrain: this.terrain,
+      trees: this.trees,
+      feeding: this.feeding,
+      audio: this.audio, // may be null initially, BirdManager handles it
+      count: CONFIG.startBirds,
+      onFoodConsumed: () => this._say('The birds finished the seeds 🐦')
+    });
   }
 
   /* ================================================ interactions ==== */
@@ -401,9 +420,11 @@ class GardenApp {
   }
 
   _wireKeyboard() {
+    this._heldKeys = new Set();
     window.addEventListener('keydown', (e) => {
       if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
       const k = e.key.toLowerCase();
+      this._heldKeys.add(k);
       if (k === 'e' || k === 'enter') { this._doInteract(); return; }
       if (k === '1') { this._setTool('hand'); return; }
       if (k === '2') { this._setTool('water'); return; }
@@ -419,6 +440,10 @@ class GardenApp {
       if (k === 'c') { el('btnClear').click(); return; }
       if (k === 'p') { el('btnPause').click(); return; }
     });
+    window.addEventListener('keyup', (e) => {
+      this._heldKeys.delete(e.key.toLowerCase());
+    });
+    window.addEventListener('blur', () => this._heldKeys.clear());
   }
 
   /* ------------------------------------------------------- HUD tick -- */
@@ -573,10 +598,10 @@ class GardenApp {
     this.terrain.updateWater(this.time);
     this.flowers.update(dt);
     this.butterflies.update(dt);
-    this.birds.update(dt, this.player.pos);
+    if (this.birds) this.birds.update(dt, this.player.pos);
     this.feeding.update(dt);
     this.rain.update(dt, this.player.pos.x, this.player.pos.z, windUniforms.uWind.value);
-    this.effects.update(dt);
+    if (this.effects) this.effects.update(dt);
 
     /* falling petals from blossoms */
     this.trees.emitPetals(dt, (p) => this.effects.petal(p.x, p.y, p.z, p.color));
@@ -594,24 +619,52 @@ class GardenApp {
       );
     }
 
-    /* interaction prompt (skipped during headless fast-forward) */
+      /* interaction prompt (skipped during headless fast-forward) */
     if (!this._ff) {
       this.interactions.update(this.scene3d.camera, this.player.pos, this.tool);
     }
+
+    /* continuous watering: hold E with water tool on a focused flower */
+    if (!this._ff && this.tool === 'water' && this._heldKeys.has('e') && this._focusFlower) {
+      const can = this._canPos(this._v1);
+      const head = new THREE.Vector3(this._focusFlower.x, this._focusFlower.y + this._focusFlower.spec.h * 0.9, this._focusFlower.z);
+      this.watering.applyContinuous(this._focusFlower, can, head, dt);
+    } else {
+      this.watering.stop();
+    }
+
+    /* rainbow: shows after rain clears, fades over time */
     if (this._rainbow > 0) this._rainbow = Math.max(0, this._rainbow - dt);
+    this.scene3d.setRainbow(this._rainbow / 6, this.player.pos);
 
     /* audio beds */
-    this.audio.update(dt, {
-      wind: windUniforms.uWind.value,
-      rain: this.rain.blend
-    });
+    if (this.audio) {
+      this.audio.update(dt, {
+        wind: windUniforms.uWind.value,
+        rain: this.rain.blend
+      });
+    }
   }
 
-  frame(now) {
+   frame(now) {
     const dt = Math.min(0.05, (now - (this._last || now)) / 1000) || 0.016;
     this._last = now;
 
     if (!this.paused) this.update(dt);
+
+    /* consume a canvas click (no-drag pointerup) as an interaction */
+    const click = this.controller.takeClick();
+    if (click) this._doInteract();
+
+    /* interaction flash overlay */
+    if (this._interactFlash > 0) {
+      this._interactFlash -= dt;
+      const f = el('flash');
+      f.hidden = false;
+      f.classList.toggle('on', this._interactFlash > 0.15);
+    } else if (!el('flash').hidden) {
+      el('flash').hidden = true;
+    }
 
     this.scene3d.applyCamera();
     this.scene3d.render();
@@ -620,22 +673,26 @@ class GardenApp {
     requestAnimationFrame((t) => this.frame(t));
   }
 
-  start() {
+  async start() {
+    await this._audioReady;
+    await this._birdsReady;
     requestAnimationFrame((t) => this.frame(t));
   }
 }
 
 /* ================================================================ boot */
-try {
-  const app = new GardenApp();
-  window.__gardenApp = app;
-  app.start();
-  document.title = 'Enchanted Garden · 3D ready | no errors';
-} catch (err) {
-  window.__err = window.__err || [];
-  window.__err.push(String((err && err.stack) || err));
-  const hint = document.getElementById('hint');
-  if (hint) hint.textContent = '⚠️ ' + (err && err.message);
-  document.title = '3D BOOT ERROR | ' + (err && err.message);
-  throw err;
-}
+(async () => {
+  try {
+    const app = new GardenApp();
+    window.__gardenApp = app;
+    await app.start();
+    document.title = 'Enchanted Garden · 3D ready | no errors';
+  } catch (err) {
+    window.__err = window.__err || [];
+    window.__err.push(String((err && err.stack) || err));
+    const hint = document.getElementById('hint');
+    if (hint) hint.textContent = '⚠️ ' + (err && err.message);
+    document.title = '3D BOOT ERROR | ' + (err && err.message);
+    throw err;
+  }
+})();

@@ -309,7 +309,7 @@ export class Flowers {
     if (f.stemSlot === undefined) f.stemSlot = this.flowers.indexOf(f);
     const grow = easeOutCubic(clamp(f.growth, 0, 1));
     const h = f.spec.h * f.scale * (0.25 + 0.75 * grow);
-    const pulse = 1 + f.waterT * 0 + Math.sin(f.waterT * 6) * 0.04 * Math.max(0, 1 - f.waterT * 2);
+    const pulse = 1 + Math.sin(f.waterT * 6) * 0.04 * Math.max(0, 1 - f.waterT * 2);
 
     /* stem: unit height geometry scaled to the flower's height */
     dummy.position.set(f.x, f.y, f.z);

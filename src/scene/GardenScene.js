@@ -147,8 +147,48 @@ export class GardenScene {
     this.sunDisc = mkSprite(disc('#fffdf0', 'rgba(255,244,190,0)'), 44);
     this.moonDisc = mkSprite(disc('#f4f6ff', 'rgba(200,214,255,0)'), 30);
 
+    /* a subtle rainbow sprite, shown after rain clears (classic reward) */
+    this.rainbow = this._buildRainbow();
+
     /* fog ties the far lawn into the sky colour instead of a hard edge */
     this.scene.fog = new THREE.Fog(0xd6f1ff, 60, 240);
+  }
+
+  _buildRainbow() {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 256;
+    const c = cv.getContext('2d');
+    const bands = ['#ff6b6b', '#ffa94d', '#ffe066', '#8ce99a', '#74c0fc', '#b197fc'];
+    const R = 118, W = 6;
+    for (let i = 0; i < bands.length; i++) {
+      c.beginPath();
+      c.arc(128, 128, R - i * W, Math.PI, Math.PI * 2);
+      c.strokeStyle = bands[i];
+      c.lineWidth = W;
+      c.lineCap = 'round';
+      c.stroke();
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, transparent: true, depthWrite: false, fog: false, opacity: 0
+    }));
+    sp.scale.set(48, 48, 1);
+    sp.center.set(0.5, 0.5);
+    this.scene.add(sp);
+    return sp;
+  }
+
+  /* intensity: 0..1, drives sprite opacity + a slow scale breathing */
+  setRainbow(intensity, playerPos) {
+    const t = Math.max(0, Math.min(1, intensity));
+    this.rainbow.material.opacity = t * 0.65;
+    this.rainbow.visible = t > 0.02;
+    if (t > 0.02 && playerPos) {
+      const breathe = 1 + Math.sin(performance.now() * 0.3) * 0.02;
+      this.rainbow.scale.set(48 * breathe, 48 * breathe, 1);
+      this.rainbow.position.set(playerPos.x, playerPos.y + 4, playerPos.z);
+    }
   }
 
   /* -------------------------------------------------- day/night step */
