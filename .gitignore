@@ -1,0 +1,17 @@
+node_modules/
+.env
+.env.*
+!.env.example
+
+dist/
+build/
+
+*.log
+
+.vscode/
+
+.DS_Store
+Thumbs.db
+
+*.zip
+*.pem
