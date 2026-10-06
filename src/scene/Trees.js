@@ -12,8 +12,8 @@ import { clamp, rand, pick, TAU } from '../utils.js';
 /* each variation: trunk colour, canopy shape, blossom mix */
 const VARIANTS = [
   { name: 'sakura',   bark: 0x5b4632, leaf: 0xf7b8d4, leaf2: 0xffffff, blossom: 0xffd7e8, ratio: 0.9,  h: 5.5 },
-  { name: 'cherry',   bark: 0x4e3b2a, leaf: 0xff9ec4, leaf2: 0xffd1e3, blossom: 0xffe4f0, ratio: 0.75, h: 6.4 },
-  { name: 'crabapple',bark: 0x604a35, leaf: 0xd94f7e, leaf2: 0xff8fb0, blossom: 0xffc9dc, ratio: 0.6,  h: 5.0 },
+  { name: 'cherry',   bark: 0x4e3b2a, leaf: 0xe6a7bb, leaf2: 0xf5d5d1, blossom: 0xffe4f0, ratio: 0.75, h: 6.4 },
+  { name: 'crabapple',bark: 0x604a35, leaf: 0xe7a588, leaf2: 0xf6d1a9, blossom: 0xffc9dc, ratio: 0.6,  h: 5.0 },
   { name: 'magnolia', bark: 0x554436, leaf: 0xe8d9f5, leaf2: 0xffffff, blossom: 0xf3e6ff, ratio: 0.85, h: 4.6 },
   { name: 'maple',    bark: 0x4a3a2c, leaf: 0x8fd18a, leaf2: 0xbfe6a8, blossom: 0xd8f0c0, ratio: 0.15, h: 6.0 },
   { name: 'birch',    bark: 0xe8e4da, leaf: 0xa8e0a0, leaf2: 0xd4f0c8, blossom: 0xffffff, ratio: 0.1,  h: 6.8 }
@@ -32,7 +32,7 @@ export class Trees {
     this.slots = [
       { x: -24, z: 12, v: 0 }, { x: -19, z: -16, v: 1 }, { x: 6, z: -24, v: 2 },
       { x: 26, z: -18, v: 3 }, { x: 30, z: 6, v: 4 }, { x: 22, z: 24, v: 5 },
-      { x: -4, z: 26, v: 1 }, { x: -30, z: -4, v: 3 }, { x: -14, z: 22, v: 2 },
+      { x: -11, z: 29, v: 1 }, { x: -30, z: -4, v: 3 }, { x: -14, z: 22, v: 2 },
       { x: 14, z: 18, v: 0 }
     ];
 
@@ -93,7 +93,7 @@ export class Trees {
 
 
     /* ---- canopy: blobs at branch tips + crown, one InstancedMesh ---- */
-    const blobGeo = new THREE.IcosahedronGeometry(1, 1);
+    const blobGeo = new THREE.SphereGeometry(1, 12, 8);
     const bp = blobGeo.attributes.position;
     for (let i = 0; i < bp.count; i++) {
       const n = 1 + (Math.sin(bp.getX(i) * 5 + bp.getY(i) * 3) * 0.14);
@@ -102,7 +102,7 @@ export class Trees {
     blobGeo.computeVertexNormals();
 
     const leafMat = swayMaterial(
-      { color: V.leaf, roughness: 0.95 },
+      { color: 0xffffff, roughness: 0.95 },
       { stiffness: 0.05, gust: 1.1 }
     );
     const blobs = [{ p: new THREE.Vector3(0, h * 0.78, 0), s: h * 0.3 }];
@@ -152,11 +152,13 @@ export class Trees {
     g.add(bl);
 
     this.group.add(g);
+    g.updateMatrixWorld(true);
     this.trees.push({
       group: g, variant: V, slot, h,
-      canopy: blobs.map((b) => ({
-        x: slot.x + b.p.x, y: baseY + b.p.y, z: slot.z + b.p.z, r: b.s
-      })),
+      canopy: blobs.map((b) => {
+        const p = g.localToWorld(b.p.clone());
+        return { x: p.x, y: p.y, z: p.z, r: b.s };
+      }),
       nextPetal: rand(0.5, 3)
     });
   }

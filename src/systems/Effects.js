@@ -26,7 +26,7 @@ const FRAG = `
     vec2 uv = gl_PointCoord - 0.5;
     float d = length(uv);
     if (d > 0.5) discard;
-    float a = vAlpha * smoothstep(0.5, 0.15, d);
+    float a = vAlpha * (1.0 - smoothstep(0.15, 0.5, d));
     gl_FragColor = vec4(vColor, a);
   }`;
 
@@ -51,6 +51,7 @@ export class Effects {
     geo.setAttribute('color', new THREE.BufferAttribute(this.col, 3));
     geo.setAttribute('aSize', new THREE.BufferAttribute(this.size, 1));
     geo.setAttribute('aAlpha', new THREE.BufferAttribute(this.alpha, 1));
+    geo.setDrawRange(0, 0);
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 500); /* never culled */
     const mat = new THREE.ShaderMaterial({
       vertexShader: VERT,
@@ -169,6 +170,9 @@ export class Effects {
       const t = this.life[i] / this.ttl[i];
       this.alpha[i] = t > 0.8 ? (1 - t) * 5 : t; /* fade in fast, out slow */
     }
+    while (this.count > 0 && this.life[this.count - 1] <= 0) this.count--;
+    this.geo.setDrawRange(0, this.count);
+    this.geo.attributes.aSize.needsUpdate = true;
     this.geo.attributes.position.needsUpdate = true;
     this.geo.attributes.aAlpha.needsUpdate = true;
     this.geo.attributes.color.needsUpdate = true;

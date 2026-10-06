@@ -67,6 +67,7 @@ export class BirdBehavior {
       /* open lawn */
       const a = rand(TAU), d = rand(6, 26);
       const x = Math.cos(a) * d, z = Math.sin(a) * d;
+      if (w.terrain.inPond(x, z)) { this.landSpot = { x: 0, y: w.terrain.heightAt(0, 0) + 0.14, z: 0, yaw: 0 }; return; }
       this.landSpot = { x, y: w.terrain.heightAt(x, z) + 0.14, z, yaw: rand(TAU) };
     }
   }
@@ -109,16 +110,17 @@ export class BirdBehavior {
         b.target.y += 1.6;
         b.fly(dt, 5.4, { agility: 3.2 });
         const d2 = b.pos.distanceToSquared(this.foodPile.pos);
-        if (d2 < 2.6) {
+        if (d2 < 5) {
           /* set down next to the pile, not on it */
           const a = rand(TAU);
           this.landSpot = {
-            x: this.foodPile.pos.x + Math.cos(a) * 0.75,
-            y: w.terrain.heightAt(this.foodPile.pos.x, this.foodPile.pos.z) + 0.14,
-            z: this.foodPile.pos.z + Math.sin(a) * 0.75,
+            x: this.foodPile.pos.x + Math.cos(a) * 0.32,
+            y: this.foodPile.pos.y + 0.1,
+            z: this.foodPile.pos.z + Math.sin(a) * 0.32,
             yaw: 0
           };
           this.state = STATE.LANDING;
+          this.timer = 8;
         }
         break;
       }
@@ -126,11 +128,13 @@ export class BirdBehavior {
       /* --------------------------------------------------- landing */
       case STATE.LANDING: {
         if (!this.landSpot) { this.state = STATE.FLYING; this.pickWanderTarget(); break; }
-        b.target.set(this.landSpot.x, this.landSpot.y + 0.6, this.landSpot.z);
+        b.target.set(this.landSpot.x, this.landSpot.y, this.landSpot.z);
         b.fly(dt, 2.6, { agility: 2.2, sink: 1.2 });
         const dy = Math.abs(b.pos.y - this.landSpot.y);
         const dh = Math.hypot(b.pos.x - this.landSpot.x, b.pos.z - this.landSpot.z);
-        if (dy < 0.25 && dh < 0.5) {
+        if (dy < 0.3 && dh < 0.55) {
+          b.pos.copy(b.target);
+          b.vel.set(0, 0, 0);
           if (this.foodPile && this.foodPile.amount > 0) {
             this.state = STATE.EATING;
             this.eatTimer = rand(0.5, 1.2);

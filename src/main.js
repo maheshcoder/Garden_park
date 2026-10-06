@@ -11,7 +11,10 @@
    =================================================================== */
 import * as THREE from 'three';
 import { CONFIG, SEEDS } from './config.js';
-import { windUniforms, rand, pick } from './utils.js';
+import { Landscape } from './scene/Landscape.js';
+import { GardenHUD } from './ui/GardenHUD.js';
+import { GardenState } from './state/GardenState.ts';
+import { windUniforms, rand, pick, withSeed } from './utils.js';
 import { GardenScene } from './scene/GardenScene.js';
 import { Terrain } from './scene/Terrain.js';
 import { Trees } from './scene/Trees.js';
@@ -32,11 +35,16 @@ class GardenApp {
     const canvas = el('garden');
     const tier = GardenScene.tierFor();
     this.tier = tier;
+    this.ready = false;
+    this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.state = new GardenState();
+    this.metrics = { fps: 0, calls: 0, triangles: 0, quality: tier.shadows ? 'standard' : 'low' };
 
     /* ---- core world ---- */
     this.scene3d = new GardenScene(canvas, tier);
-    this.terrain = new Terrain(this.scene3d.scene, tier);
-    this.trees = new Trees(this.scene3d.scene, this.terrain);
+    this.terrain = withSeed(1937, () => new Terrain(this.scene3d.scene, tier));
+    this.trees = withSeed(6201, () => new Trees(this.scene3d.scene, this.terrain));
+    this.landscape = new Landscape(this.scene3d.scene, this.terrain, tier);
     this.flowers = new Flowers(this.scene3d.scene, this.terrain);
     this.rain = new Rain(this.scene3d.scene, tier);
     this.butterflies = new Butterflies(this.scene3d.scene, this.terrain);
@@ -65,7 +73,6 @@ class GardenApp {
     this.progress = { planted: 0, watered: 0, fed: 0 };
     this.time = 0;
     this._rainbow = 0;
-    this._interactFlash = 0;
     this._heldKeys = new Set();
     this._v1 = new THREE.Vector3();
     this._defaultHint = el('hint').textContent;
@@ -77,19 +84,35 @@ class GardenApp {
     this._registerInteractions();
     this._wireUI();
     this._wireKeyboard();
-    this._seedWorld();
-    this._applyUrlParams();
-    this._exposeApi();
+    withSeed(1307, () => this._seedWorld());
+    this.hud = new GardenHUD(this);
+    document.addEventListener('visibilitychange', () => {
+      this._last = 0; this.controller.keys.clear(); this._heldKeys.clear();
+      this.controller.joy.x = this.controller.joy.y = 0;
+      this.audio?.suspend(document.hidden || this.paused);
+    });
+    canvas.addEventListener('webglcontextlost', event => {
+      event.preventDefault(); this.contextLost = true;
+      showFallback('The graphics connection was interrupted. Try again, or visit the classic garden.');
+    });
+    window.addEventListener('pagehide', event => { if (!event.persisted) this.dispose(); });
   }
 
   async _loadAudio() {
-    const { AudioSystem } = await import('./systems/AudioSystem.js');
+    let AudioSystem;
+    try { ({ AudioSystem } = await import('./systems/AudioSystem.js')); }
+    catch {
+      const silent = new Proxy({ muted: true }, { get: (target, key) => key in target ? target[key] : () => {} });
+      this.audio = silent; this.watering.audio = silent; this.feeding.audio = silent;
+      return;
+    }
     this.audio = new AudioSystem();
     this.watering.audio = this.audio;
     this.feeding.audio = this.audio;
-    const wakeAudio = () => this.audio.ensure();
+    const wakeAudio = () => { if (!this.audio.muted) this.audio.ensure(); };
     window.addEventListener('pointerdown', wakeAudio);
     window.addEventListener('keydown', wakeAudio);
+    this._wakeAudio = wakeAudio;
   }
 
   async _loadBirds() {
@@ -119,7 +142,7 @@ class GardenApp {
     this._entryFlower = {
       id: 'flower',
       pos: new THREE.Vector3(9999, -99, 9999),
-      maxRange: CONFIG.reach + 1.5,
+      maxRange: CONFIG.reach,
       getPrompt: (tool) => {
         const f = this._focusFlower;
         if (!f) return null;
@@ -139,6 +162,11 @@ class GardenApp {
       }
     };
     I.register(this._entryFlower);
+    this._entryBird = I.register({
+      id: 'bird', pos: new THREE.Vector3(9999,0,9999), maxRange: 3.4,
+      getPrompt: tool => tool === 'hand' && this._focusBird ? 'Listen to the bird' : null,
+      onInteract: () => { this.audio?.chirp(); this._say('A little greeting. Step back and leave some seeds for your visitor.'); }
+    });
 
     /* --- pond: refill the can --- */
     I.register({
@@ -182,7 +210,7 @@ class GardenApp {
       id: 'bench',
       pos: this.terrain.benchPos.clone().setY(this.terrain.benchTop),
       maxRange: CONFIG.reach + 1,
-      getPrompt: () => 'Sit on the bench',
+      getPrompt: () => 'Inspect the garden bench',
       onInteract: () => this._say('A perfect spot to watch the garden 🌳')
     });
 
@@ -193,13 +221,14 @@ class GardenApp {
         pos: new THREE.Vector3(t.slot.x, t.group.position.y + t.h * 0.4, t.slot.z),
         maxRange: 3.4,
         getPrompt: () => 'Inspect ' + t.variant.name + ' tree',
-        onInteract: () => this._say(this._treeBlurb(t))
+        onInteract: () => { this.state.inspectTree('tree-' + i); this._say(this._treeBlurb(t)); }
       });
     });
 
     /* --- ground: planting / food placement happen via crosshair --- */
     this._entryGround = {
       id: 'ground',
+      priority: -20,
       pos: new THREE.Vector3(9999, -99, 9999),   /* retargeted per frame */
       maxRange: 11,
       getPrompt: (tool) => {
@@ -215,6 +244,13 @@ class GardenApp {
       }
     };
     I.register(this._entryGround);
+    const matrix = new THREE.Matrix4(), position = new THREE.Vector3();
+    for (let i = 0; i < this.terrain.rocks.count; i++) {
+      this.terrain.rocks.getMatrixAt(i, matrix); position.setFromMatrixPosition(matrix);
+      I.register({id: 'rock-' + i, pos: position.clone(), maxRange: 2,
+        getPrompt: tool => tool === 'hand' ? 'Inspect mossy stone' : null,
+        onInteract: () => this._say('A little shelter for insects, warmed by the sun.')});
+    }
   }
 
   _treeBlurb(t) {
@@ -238,9 +274,12 @@ class GardenApp {
   }
 
   _waterPlant(f) {
+    if (!f || f.dead || Math.hypot(f.x - this.player.pos.x, f.z - this.player.pos.z) > CONFIG.reach) return false;
     const can = this._canPos(this._v1 || (this._v1 = new THREE.Vector3()));
     const head = new THREE.Vector3(f.x, f.y + f.spec.h * 0.9, f.z);
     if (this.watering.waterPlant(f, can)) {
+      this._actionTime = 0.8;
+      this.state.discoverFlower(f.type);
       this.watering.spray(can, head, 0.25);   /* extra droplets for feedback */
       return true;
     }
@@ -287,20 +326,21 @@ class GardenApp {
   }
 
   _doInteract() {
+    if (!this.ready || this.paused || this.overview || this.hud?.dialog?.open) return false;
     const ctx = { tool: this.tool, player: this.player, app: this };
     if (this.interactions.interact(ctx)) {
       this.audio.pop();
-      this._interactFlash = 0.3;
+      this._actionTime = 0.7;
       return true;
     }
     return false;
   }
 
   /* crosshair focus: what is the player looking at this frame? */
-  _updateFocus() {
+  _updateFocus(ndc = { x: 0, y: 0 }, proximity = true) {
     const cam = this.scene3d.camera;
     const pp = this.player.pos;
-    this._raycaster.setFromCamera({ x: 0, y: 0 }, cam);
+    this._raycaster.setFromCamera(ndc, cam);
 
     /* flower under the crosshair? */
     const heads = Object.values(this.flowers.headMeshes);
@@ -314,14 +354,19 @@ class GardenApp {
       ) || null;
     }
     /* proximity fallback: nearest flower just in front of us */
-    if (!focus) {
+    if (focus && Math.hypot(focus.x - pp.x, focus.z - pp.z) > CONFIG.reach) focus = null;
+    if (!focus && proximity) {
       focus = this.flowers.nearest(pp.x, pp.z, 2.4);
       if (focus) {
         const d = Math.hypot(focus.x - pp.x, focus.z - pp.z);
         if (d > CONFIG.reach) focus = null;
       }
     }
+    this._focusBird = this.birds?.nearestGrounded(pp, 3.4);
+    if (this._focusBird) this._entryBird.pos.copy(this._focusBird.bird.pos);
+    else this._entryBird.pos.set(9999,0,9999);
     this._focusFlower = focus;
+    if (focus) this.state.discoverFlower(focus.type);
     this._entryFlower.pos.set(
       focus ? focus.x : 9999,
       focus ? focus.y + focus.spec.h : -99,
@@ -354,6 +399,7 @@ class GardenApp {
       ['btnToolHand', 'hand'], ['btnToolWater', 'water'], ['btnToolFood', 'food']
     ]) {
       el(id).classList.toggle('on', name === t);
+      el(id).setAttribute('aria-pressed', String(name === t));
     }
     this._say(
       t === 'hand' ? 'Hand: pick flowers, plant, inspect (1)'
@@ -399,6 +445,8 @@ class GardenApp {
     });
     el('btnPause').addEventListener('click', () => {
       this.paused = !this.paused;
+      this.controller.keys.clear(); this._heldKeys.clear();
+      this.audio?.suspend(this.paused);
       this._refreshUI();
       this._say(this.paused ? 'Paused - take your time 🌼' : 'Back to the garden');
     });
@@ -413,7 +461,7 @@ class GardenApp {
     el('btnMute').addEventListener('click', () => {
       this.audio.ensure();
       this.audio.setMuted(!this.audio.muted);
-      el('btnMute').textContent = this.audio.muted ? '🔇 Muted' : '🔊 Sound';
+      el('btnMute').textContent = this.audio.muted ? 'Sound off' : 'Sound on';
       el('btnMute').classList.toggle('on', this.audio.muted);
       this._refreshUI();
     });
@@ -422,9 +470,12 @@ class GardenApp {
   _wireKeyboard() {
     this._heldKeys = new Set();
     window.addEventListener('keydown', (e) => {
-      if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+      if (!this.ready || this.hud?.dialog?.open || e.target?.closest?.('input, select, textarea, button, a')) return;
       const k = e.key.toLowerCase();
       this._heldKeys.add(k);
+      if (e.repeat) return;
+      if (this.paused && k !== 'p') return;
+      if (k === ' ' || k === 'enter') e.preventDefault();
       if (k === 'e' || k === 'enter') { this._doInteract(); return; }
       if (k === '1') { this._setTool('hand'); return; }
       if (k === '2') { this._setTool('water'); return; }
@@ -478,7 +529,8 @@ class GardenApp {
 
     el('btnRain').classList.toggle('on', this.rain.target > 0.5);
     el('btnPause').classList.toggle('on', this.paused);
-    el('btnPause').textContent = this.paused ? '▶️ Resume' : '⏸ Pause';
+    el('btnPause').textContent = this.paused ? 'Resume' : 'Pause';
+    this.hud?.update();
 
     /* restore the default hint after a temporary say() */
     if (this._sayUntil && now > this._sayUntil) {
@@ -493,7 +545,7 @@ class GardenApp {
     let placed = 0, guard = 0;
     while (placed < CONFIG.startFlowers && guard++ < 400) {
       let x, z;
-      if (Math.random() < 0.6) {
+      if (rand() < 0.6) {
         const bed = pick(this.terrain.soilBeds);
         x = bed.x + rand(-bed.w / 2, bed.w / 2);
         z = bed.z + rand(-bed.d / 2, bed.d / 2);
@@ -506,7 +558,8 @@ class GardenApp {
       if (Math.hypot(x, z - 30) < 3) continue;
       if (this.flowers.plant(x, z, 'random')) placed++;
     }
-    this.progress.planted = placed;   /* seeded garden counts toward goals */
+    this.progress.planted = 0;
+    for (const flower of this.flowers.flowers) { flower.growth = rand(0.65, 1); this.flowers._sync(flower); }
 
     /* butterflies */
     for (let i = 0; i < CONFIG.startButterflies; i++) this.butterflies.add();
@@ -522,7 +575,7 @@ class GardenApp {
       el('seedSelect').value = this.seedType;
     }
     if (q.has('hour')) {
-      this.scene3d.hour = parseFloat(q.get('hour')) || 0;
+      this.scene3d.hour = ((Number(q.get('hour')) || 0) % 24 + 24) % 24;
       this.scene3d.hourTarget = null;
     }
     if (q.has('rain')) {
@@ -536,7 +589,7 @@ class GardenApp {
   /* run the simulation forward without rendering (classic fastForward) */
   fastForward(seconds) {
     const step = 1 / 60;
-    const n = Math.min(20000, Math.round(seconds / step));
+    const n = Number.isFinite(seconds) ? Math.max(0, Math.min(20000, Math.round(seconds / step))) : 0;
     this._ff = true;               /* skip raycasts + DOM prompt writes */
     for (let i = 0; i < n; i++) this.update(step);
     this._ff = false;
@@ -560,6 +613,7 @@ class GardenApp {
       get seedType() { return app.seedType; },
       set seedType(v) { app.seedType = v; },
       get gardener() { return app.player.pos; },
+      get progress() { return app.state.snapshot({ planted: app.progress.planted, watered: app.watering.totalWatered, fed: app.feeding.totalFed }); },
       plant(x, z, type) {
         const f = app.flowers.plant(x, z, type || app.seedType);
         if (f) app.progress.planted++;
@@ -589,14 +643,26 @@ class GardenApp {
       0.3 + Math.sin(this.time * 0.35) * 0.18 + Math.sin(this.time * 1.7) * 0.06
       + this.rain.blend * 0.4;
 
-    /* player + camera */
+    if (this.reducedMotion) windUniforms.uWind.value *= 0.15;
+    this._actionTime = Math.max(0, (this._actionTime || 0) - dt);
+    this.controller.interacting = this._actionTime > 0 || this.watering.pouring;
+    this.controller.locked = this.overview || !!this.hud?.dialog?.open;
     this.controller.update(dt);
-    if (!this._ff) this._updateFocus();
+    if (this.overview) this.scene3d.setCameraTarget(0, 1, 0);
+    this.scene3d.applyCamera(dt);
+    this.scene3d.scene.updateMatrixWorld(true);
+    this._focusElapsed = (this._focusElapsed || 0) + dt;
+    if (!this._ff && this._focusElapsed >= 0.08) { this._updateFocus(); this._focusElapsed = 0; }
 
     /* world systems */
     this.scene3d.updateClock(dt);
-    this.terrain.updateWater(this.time);
+    this.terrain.updateWater(this.reducedMotion ? 0 : this.time);
+    this.landscape.update(this.time, this.reducedMotion);
+    this.flowers.rain = this.rain.blend;
     this.flowers.update(dt);
+    if (Math.hypot(this.player.pos.x-this.terrain.pondCenter.x, this.player.pos.z-this.terrain.pondCenter.z) < this.terrain.pondRadius + CONFIG.reach) this.state.visitPond();
+    this._raycaster.setFromCamera(this.controller.pointer, this.scene3d.camera);
+    this.butterflies.setPointer(this._raycaster.ray, this.player.pos.y + 2);
     this.butterflies.update(dt);
     if (this.birds) this.birds.update(dt, this.player.pos);
     this.feeding.update(dt);
@@ -604,7 +670,7 @@ class GardenApp {
     if (this.effects) this.effects.update(dt);
 
     /* falling petals from blossoms */
-    this.trees.emitPetals(dt, (p) => this.effects.petal(p.x, p.y, p.z, p.color));
+    this.trees.emitPetals(this.reducedMotion ? dt * 0.1 : dt, (p) => this.effects.petal(p.x, p.y, p.z, p.color));
 
     /* ambient pollen by day, fireflies by night */
     this._ambientT = (this._ambientT || 0) - dt;
@@ -625,7 +691,7 @@ class GardenApp {
     }
 
     /* continuous watering: hold E with water tool on a focused flower */
-    if (!this._ff && this.tool === 'water' && this._heldKeys.has('e') && this._focusFlower) {
+    if (!this._ff && !this.controller.locked && this.tool === 'water' && this._heldKeys.has('e') && this._focusFlower && Math.hypot(this._focusFlower.x-this.player.pos.x, this._focusFlower.z-this.player.pos.z) <= CONFIG.reach) {
       const can = this._canPos(this._v1);
       const head = new THREE.Vector3(this._focusFlower.x, this._focusFlower.y + this._focusFlower.spec.h * 0.9, this._focusFlower.z);
       this.watering.applyContinuous(this._focusFlower, can, head, dt);
@@ -647,6 +713,9 @@ class GardenApp {
   }
 
    frame(now) {
+    cancelAnimationFrame(this._raf);
+    if (this.disposed || this.contextLost) return;
+    if (document.hidden) { this._last = now; this._raf = requestAnimationFrame(t => this.frame(t)); return; }
     const dt = Math.min(0.05, (now - (this._last || now)) / 1000) || 0.016;
     this._last = now;
 
@@ -654,45 +723,73 @@ class GardenApp {
 
     /* consume a canvas click (no-drag pointerup) as an interaction */
     const click = this.controller.takeClick();
-    if (click) this._doInteract();
-
-    /* interaction flash overlay */
-    if (this._interactFlash > 0) {
-      this._interactFlash -= dt;
-      const f = el('flash');
-      f.hidden = false;
-      f.classList.toggle('on', this._interactFlash > 0.15);
-    } else if (!el('flash').hidden) {
-      el('flash').hidden = true;
+    if (click && !this.paused && !this.overview) {
+      this._updateFocus(click, false);
+      this.interactions.update(this.scene3d.camera, this.player.pos, this.tool);
+      if (this._focusFlower && this._entryFlower.getPrompt(this.tool)) this.interactions.active = this._entryFlower;
+      else if (this._groundPoint && this._entryGround.getPrompt(this.tool)) this.interactions.active = this._entryGround;
+      this._doInteract();
     }
 
-    this.scene3d.applyCamera();
     this.scene3d.render();
     this._tickUI(now);
 
-    requestAnimationFrame((t) => this.frame(t));
+    this._measure(now);
+    this._raf = requestAnimationFrame((t) => this.frame(t));
+  }
+
+  _measure(now) {
+    this._frames = (this._frames || 0) + 1;
+    if (!this._measureAt) this._measureAt = now;
+    if (now - this._measureAt < 3000) return;
+    this.metrics.fps = Math.round(this._frames * 1000 / (now - this._measureAt));
+    Object.assign(this.metrics, {calls: this.scene3d.renderer.info.render.calls, triangles: this.scene3d.renderer.info.render.triangles});
+    this._frames = 0; this._measureAt = now;
+    if (this.metrics.fps < 28 && this.hud.quality !== 'low' && !this.paused) {
+      this.hud.setQuality('low'); this.metrics.quality = 'low';
+    }
+  }
+
+  dispose() {
+    this.disposed = true; cancelAnimationFrame(this._raf);
+    window.removeEventListener('pointerdown', this._wakeAudio);
+    window.removeEventListener('keydown', this._wakeAudio);
+    this.audio?.dispose(); this.scene3d.dispose();
   }
 
   async start() {
     await this._audioReady;
     await this._birdsReady;
-    requestAnimationFrame((t) => this.frame(t));
+    this.birds.world.audio = this.audio;
+    this._applyUrlParams();
+    this.controller.update(0);
+    this.scene3d.updateClock(0);
+    this.scene3d.applyCamera();
+    this.ready = true;
+    this._exposeApi();
+    this._tickUI(performance.now());
+    if (el('loading')) el('loading').hidden = true;
+    this._raf = requestAnimationFrame((t) => this.frame(t));
   }
+}
+
+function showFallback(message) {
+  if (el('loading')) el('loading').hidden = true;
+  if (el('fallback')) el('fallback').hidden = false;
+  if (el('fallbackMessage')) el('fallbackMessage').textContent = message;
 }
 
 /* ================================================================ boot */
 (async () => {
   try {
     const app = new GardenApp();
-    window.__gardenApp = app;
     await app.start();
-    document.title = 'Enchanted Garden · 3D ready | no errors';
+    window.__gardenApp = app;
+    document.title = 'Enchanted Garden · A little space to slow down';
   } catch (err) {
     window.__err = window.__err || [];
     window.__err.push(String((err && err.stack) || err));
-    const hint = document.getElementById('hint');
-    if (hint) hint.textContent = '⚠️ ' + (err && err.message);
-    document.title = '3D BOOT ERROR | ' + (err && err.message);
-    throw err;
+    showFallback('This device could not open the 3D garden. Try a modern browser, or enjoy the classic garden.');
+    console.error('Garden startup failed', err);
   }
 })();

@@ -12,7 +12,9 @@ export class AudioSystem {
   constructor() {
     this.ctx = null;
     this.master = null;
-    this.muted = false;
+    this.muted = true;
+    this.volume = 0.55;
+    this.suspended = false;
     this.started = false;
     this._ambientTimer = 0;
     this._noiseBuf = null;
@@ -32,7 +34,7 @@ export class AudioSystem {
     try {
       this.ctx = new AC();
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.muted ? 0 : 0.8;
+      this.master.gain.value = this.muted || this.suspended ? 0 : this.volume;
       this.master.connect(this.ctx.destination);
       this._noiseBuf = this._makeNoise();
       this._startAmbience();
@@ -74,9 +76,18 @@ export class AudioSystem {
     if (this.master) {
       const t = this.ctx.currentTime;
       this.master.gain.cancelScheduledValues(t);
-      this.master.gain.linearRampToValueAtTime(m ? 0 : 0.8, t + 0.15);
+      this.master.gain.linearRampToValueAtTime(m || this.suspended ? 0 : this.volume, t + 0.15);
     }
   }
+
+  setVolume(value) {
+    this.volume = Math.max(0, Math.min(1, Number(value) || 0));
+    this.setMuted(this.muted);
+  }
+
+  suspend(value) { this.suspended = value; this.setMuted(this.muted); }
+
+  dispose() { this.ctx?.close().catch(() => {}); this.ctx = null; }
 
   /* per-frame: wind follows gusts, rain bed follows blend 0..1 */
   update(dt, { wind = 0.4, rain = 0 } = {}) {

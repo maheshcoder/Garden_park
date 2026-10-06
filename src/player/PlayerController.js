@@ -32,9 +32,13 @@ export class PlayerController {
 
     this._ray = new THREE.Raycaster();
     this._ndc = new THREE.Vector2();
+    this._fwd = new THREE.Vector3();
+    this._right = new THREE.Vector3();
+    this.pointer = new THREE.Vector2();
 
     /* spawn on the path near the south gate */
-    player.pos.set(0, terrain.heightAt(0, 30), 30);
+    player.pos.set(0, terrain.heightAt(0, 21), 21);
+    player.group.rotation.y = Math.PI;
     player.yaw = Math.PI;
 
     this._bindKeyboard();
@@ -43,6 +47,7 @@ export class PlayerController {
 
   _bindKeyboard() {
     window.addEventListener('keydown', (e) => {
+      if (e.target?.closest?.('input, select, textarea, button, a, [role=dialog]')) return;
       const k = e.key.toLowerCase();
       if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
       this.keys.add(k);
@@ -54,6 +59,8 @@ export class PlayerController {
   _bindPointer() {
     const c = this.canvas;
     c.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || this.dragging) return;
+      this.pointerId = e.pointerId;
       this.dragging = true;
       this.dragMoved = 0;
       this.lastX = e.clientX;
@@ -61,7 +68,8 @@ export class PlayerController {
       c.setPointerCapture(e.pointerId);
     });
     c.addEventListener('pointermove', (e) => {
-      if (!this.dragging) return;
+      this.pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+      if (!this.dragging || e.pointerId !== this.pointerId) return;
       const dx = e.clientX - this.lastX;
       const dy = e.clientY - this.lastY;
       this.lastX = e.clientX;
@@ -74,6 +82,7 @@ export class PlayerController {
       }
     });
     c.addEventListener('pointerup', (e) => {
+      if (e.pointerId !== this.pointerId) return;
       this.dragging = false;
       if (this.dragMoved <= 6) {
         /* treat as a click for the interaction system */
@@ -114,15 +123,16 @@ export class PlayerController {
     /* joystick overrides/extends keys when touched */
     if (Math.hypot(this.joy.x, this.joy.y) > 0.1) {
       ix = this.joy.x;
-      iz = -this.joy.y;
+      iz = this.joy.y;
     }
+    if (this.locked) { ix = 0; iz = 0; }
     const mag = Math.hypot(ix, iz);
     if (mag > 1) { ix /= mag; iz /= mag; }
 
     /* camera-relative movement: forward = from eye toward target */
     const yaw = this.scene3d.yaw;
-    const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    const fwd = this._fwd.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+    const right = this._right.set(Math.cos(yaw), 0, -Math.sin(yaw));
 
     this.moveIntent.set(0, 0, 0);
     if (mag > 0.05) {

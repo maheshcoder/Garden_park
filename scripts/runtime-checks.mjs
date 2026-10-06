@@ -1,0 +1,42 @@
+﻿import assert from 'node:assert/strict';
+export async function runChecks({send,evaluate,navigate,shot,delay,preview}) {
+ const results=[];
+ const check=async(name,fn)=>{const value=await evaluate(typeof fn==='function'?'('+fn.toString()+')()':fn);assert.ok(value,name+': '+JSON.stringify(value));results.push(name);};
+ await check('visible flowers and finite butterflies',()=>window.__gardenApp.flowers.stemMesh.count===44 && garden.butterflies.every(b=>[b.x,b.y,b.z].every(Number.isFinite)));
+ await check('unearned progress begins at zero',()=>garden.progress.percent===0);
+ await send('Page.bringToFront');await evaluate('document.getElementById("garden").focus()');
+ await send('Input.dispatchKeyEvent',{type:'keyDown',key:'w',code:'KeyW'});await check('W key reaches controller',()=>__gardenApp.controller.keys.has('w'));await evaluate('__gardenApp.update(.2)');await delay(200);await send('Input.dispatchKeyEvent',{type:'keyUp',key:'w',code:'KeyW'});
+ await check('WASD moves forward',()=>garden.gardener.z<21);
+ await check('watering consumes water and animates',()=>{const a=__gardenApp;a.paused=true;a.player.pos.set(0,a.terrain.heightAt(0,5),5);const f=garden.plant(0,4,'rose');f.waterLevel=0;a._setTool('water');a._focusFlower=f;const n=a.watering.amount;const ok=a._waterPlant(f);a.update(.016);return ok&&a.watering.amount===n-1&&f.waterLevel>0&&a.player.state==='interacting'&&a.effects.count>0;});
+ await check('distant watering rejected',()=>{const a=__gardenApp,f=garden.plant(-30,-25,'rose'),n=a.watering.amount;return a._waterPlant(f)===false&&a.watering.amount===n;});
+ await check('pause rejects world interactions',()=>__gardenApp._doInteract()===false);
+ await check('bird feeding responds to food',()=>{const a=__gardenApp;a.player.pos.set(35,0,30);const n=a.feeding.food,p=a.feeding.placeFood(0,0);for(let i=0;i<5400&&a.feeding.piles.includes(p);i++)a.birds.update(1/60,a.player.pos);return a.feeding.food===n-1&&p.amount===0&&a.feeding.totalFed>=4;});
+ await check('pond refills inventory',()=>{const a=__gardenApp;a.watering.amount=0;return a.watering.refill(a.terrain.pondCenter)&&a.watering.amount===100;});
+ await check('rain and day-night controls',()=>{const a=__gardenApp;document.getElementById('btnRain').click();document.getElementById('btnDayNight').click();return a.rain.target===1&&a.scene3d.hourTarget===22;});
+ await check('settings focus does not move player',()=>{const a=__gardenApp;document.getElementById('openSettings').click();const select=document.getElementById('seedSelect');select.focus();select.dispatchEvent(new KeyboardEvent('keydown',{key:'w',bubbles:true}));const before=a.player.pos.clone();a.update(.2);document.getElementById('closeSettings').click();return Math.hypot(before.x-a.player.pos.x,before.z-a.player.pos.z)===0&&!a.controller.keys.has('w');});
+ await check('quality changes renderer budget',()=>{const a=__gardenApp;a.hud.setQuality('low');return a.scene3d.renderer.getPixelRatio()===1&&!a.scene3d.renderer.shadowMap.enabled&&a.terrain.grass.count<=1400;});
+ await navigate('?t=20&hour=9&seed=lavender');
+ await check('cold URL preset boots safely',()=>garden.seedType==='lavender'&&__err.length===0);
+ await evaluate('document.getElementById("cameraMode").click()');await delay(500);await shot('garden-overview');
+ await evaluate('document.getElementById("cameraMode").click();__gardenApp.scene3d.hour=22;__gardenApp.scene3d.hourTarget=null;__gardenApp.update(.01)');await delay(300);await shot('garden-night');
+ await evaluate('document.getElementById("openSettings").click()');await shot('garden-settings');
+ await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+ await send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:2});
+ await navigate('?quality=low');await delay(500);await shot('garden-mobile');
+ await check('mobile controls reachable',()=>{const stick=document.getElementById('stick'),r=stick.getBoundingClientRect();return getComputedStyle(stick).pointerEvents==='auto'&&r.bottom<=innerHeight&&r.left>=0&&document.getElementById('touch').classList.contains('show')&&document.documentElement.scrollWidth===innerWidth;});
+ const stick=await evaluate('(()=>{const r=document.getElementById("stick").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()');
+ const before=await evaluate('garden.gardener.z');
+ await send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:stick.x,y:stick.y-26,id:1}]});await evaluate('__gardenApp.update(.2)');await delay(200);await send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ const after=await evaluate('garden.gardener.z');assert.ok(after<before,'touch joystick moves forward');results.push('touch joystick moves forward');
+ await check('touch joystick releases',()=>__gardenApp.controller.joy.x===0&&__gardenApp.controller.joy.y===0);
+ await evaluate('document.getElementById("openSettings").click()');await shot('garden-mobile-settings');
+ await check('mobile settings fit viewport',()=>document.getElementById('settings').getBoundingClientRect().right<=innerWidth);
+ await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});await navigate('?quality=low');await check('reduced motion honored',()=>__gardenApp.reducedMotion===true);
+ await send('Page.navigate',{url:'http://127.0.0.1:4175/classic.html'});await delay(1000);
+ await check('classic garden preserved',()=>!!window.garden&&garden.flowers.length>0);
+ await check('classic planting works',()=>{const n=garden.flowers.length;document.getElementById('btnFlower').click();return garden.flowers.length===n+1;});
+ if(!preview){await send('Page.navigate',{url:'http://127.0.0.1:4175/_qa3d.html'});let qa='';for(let i=0;i<100&&!qa;i++){await delay(200);qa=await evaluate('document.getElementById("qaout")?.textContent');}console.log('Existing 3D QA:',qa);assert.match(qa,/fail=0/);}
+ await navigate('?quality=low');await evaluate('document.getElementById("garden").dispatchEvent(new Event("webglcontextlost",{cancelable:true}))');
+ await check('graphics interruption offers fallback',()=>!document.getElementById('fallback').hidden&&document.getElementById('fallback').querySelector('a').getAttribute('href')==='classic.html');
+ await shot('garden-fallback');console.log('Runtime checks passed ('+results.length+'): '+results.join(', '));
+}

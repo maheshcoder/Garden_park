@@ -56,7 +56,7 @@ export class InteractionSystem {
       if (d > (e.maxRange || 6)) continue;
       const prompt = e.getPrompt ? e.getPrompt(tool) : null;
       if (!prompt) continue;
-      let score = 10 - d;
+      let score = 10 - d + (e.priority || 0);
       if (e === viaRay) score += 100;
       if (score > bestScore) { bestScore = score; best = e; }
     }
@@ -79,6 +79,7 @@ export class InteractionSystem {
   /* run the active interaction; returns true if something happened */
   interact(ctx) {
     if (!this.active || !this.active.onInteract) return false;
+    if (ctx.player?.pos && this.active.pos && ctx.player.pos.distanceTo(this.active.pos) > (this.active.maxRange || 6)) return false;
     const prompt = this.active.getPrompt ? this.active.getPrompt(ctx.tool) : null;
     if (!prompt) return false;
     this.active.onInteract(ctx);

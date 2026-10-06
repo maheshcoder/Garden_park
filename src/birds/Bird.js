@@ -97,6 +97,7 @@ export class Bird {
     this.pos = new THREE.Vector3(rand(-20, 20), rand(6, 12), rand(-20, 20));
     this.vel = new THREE.Vector3(rand(-2, 2), 0, rand(-2, 2));
     this.target = new THREE.Vector3();
+    this._desired = new THREE.Vector3();
     this.yaw = 0;
     this.pitch = 0;
     this.bank = 0;
@@ -128,7 +129,7 @@ export class Bird {
     this.flapPhase += dt * this.flapSpeed * (0.4 + amp);
     const swing = Math.sin(this.flapPhase) * 0.95 * amp + (grounded ? 0.35 : 0.12);
     this.wingL.rotation.z = swing;
-    this.wingR.rotation.z = swing;
+    this.wingR.rotation.z = -swing;
 
     /* landing fold + idle breathing */
     const fold = grounded ? 0.45 : 0;
@@ -146,7 +147,7 @@ export class Bird {
 
   /* BirdFlight: steer toward target, orient the mesh to velocity */
   fly(dt, speed, opts = {}) {
-    const desired = new THREE.Vector3().subVectors(this.target, this.pos);
+    const desired = this._desired.subVectors(this.target, this.pos);
     const dist = desired.length();
     if (dist > 0.01) desired.divideScalar(dist).multiplyScalar(speed);
     const agility = opts.agility || 2.4;

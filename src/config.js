@@ -7,7 +7,7 @@
 export const CONFIG = {
   /* population ------------------------------------------------------ */
   maxFlowers: 90,             /* same cap as the 2D garden            */
-  startFlowers: 24,
+  startFlowers: 44,
   flowerCapacityPerSpecies: 40,/* InstancedMesh slots per species      */
   maxButterflies: 24,
   startButterflies: 8,
@@ -17,13 +17,13 @@ export const CONFIG = {
   gardenRadius: 37,           /* fence line / walkable bound          */
   reach: 3.4,                 /* interaction range in world units     */
   attractRadius: 4.2,         /* butterflies follow the cursor ray    */
-  dayLength: 170,             /* seconds for a full 24h cycle         */
+  dayLength: 1200,             /* seconds for a full 24h cycle         */
   walkSpeed: 4.4,
 
   /* inventories ------------------------------------------------------ */
-  startWater: 8,
-  maxWater: 12,
-  startFood: 4,
+  startWater: 100,
+  maxWater: 100,
+  startFood: 5,
   maxFood: 12,
 
   /* goals for the ⭐ progress chip ----------------------------------- */

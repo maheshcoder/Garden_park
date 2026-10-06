@@ -88,7 +88,7 @@ export class Butterflies {
     const groundY = this.terrain.heightAt(cx, cz);
     const pal = pick(PALETTES);
     const b = {
-      x: cx, y: groundY + rand(3.5, 7),
+      x: cx, z: cz, y: groundY + rand(3.5, 7),
       vx: rand(-1, 1), vy: rand(-0.3, 0.3), vz: rand(-1, 1),
       goal: new THREE.Vector3(cx + rand(-6, 6), groundY + rand(3, 8), cz + rand(-6, 6)),
       phase: rand(TAU),

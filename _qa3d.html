@@ -131,6 +131,7 @@
 
       var fl = app.flowers.flowers[0];
       app.watering.amount = 8;
+      app.player.pos.set(fl.x, app.terrain.heightAt(fl.x, fl.z), fl.z + 1);
       var w0 = fl.waterLevel;
       app._waterPlant(fl);
       ok('water: consumed a can unit', app.watering.amount === 7, app.watering.amount);
@@ -328,11 +329,11 @@
       })(), window.__audioErr || 'ok');
       var muteLabel0 = document.getElementById('btnMute').textContent;
       click('btnMute');
-      ok('audio: mute toggles', app.audio.muted === true, app.audio.muted);
+      ok('audio: sound turns on', app.audio.muted === false, app.audio.muted);
       ok('audio: mute label flips', document.getElementById('btnMute').textContent !== muteLabel0,
         document.getElementById('btnMute').textContent);
       click('btnMute');
-      ok('audio: unmute restores', app.audio.muted === false);
+      ok('audio: mute restores', app.audio.muted === true);
 
       /* URL fast-forward parity with the classic page */
       ok('url: fastForward advances the clock', (function () {

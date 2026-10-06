@@ -1,11 +1,7 @@
 /* ===================================================================
    Player - controllable avatar.
-   Built procedurally (body, head, hat, arms, legs, watering can) so
-   the project never blocks on an external model. To swap in a GLB:
-
-     loader.load('public/models/avatar.glb', (gltf) => {
-       player.setExternalModel(gltf.scene);   // hides the placeholder
-     });
+   Built procedurally, with no external asset required.
+   setExternalModel(model) remains available for a caller-supplied model.
 
    States: 'idle' | 'walking' | 'interacting'
    =================================================================== */
@@ -21,8 +17,8 @@ export class Player {
     this.external = null;
 
     const skin = new THREE.MeshStandardMaterial({ color: 0xf6cda0, roughness: 0.9 });
-    const shirt = new THREE.MeshStandardMaterial({ color: 0x4f8ef7, roughness: 0.9 });
-    const pants = new THREE.MeshStandardMaterial({ color: 0x3b5b93, roughness: 0.9 });
+    const shirt = new THREE.MeshStandardMaterial({ color: 0xf4ead1, roughness: 0.9 });
+    const pants = new THREE.MeshStandardMaterial({ color: 0x59715a, roughness: 0.9 });
     const hatM = new THREE.MeshStandardMaterial({ color: 0xe8c06a, roughness: 1 });
     const canM = new THREE.MeshStandardMaterial({ color: 0x5a8f3c, roughness: 0.6, metalness: 0.3 });
 

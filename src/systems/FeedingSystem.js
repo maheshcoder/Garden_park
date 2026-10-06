@@ -11,6 +11,7 @@
    each frame. That keeps the two systems decoupled per the spec.
    =================================================================== */
 import * as THREE from 'three';
+import { CONFIG } from '../config.js';
 import { rand, TAU } from '../utils.js';
 
 const PILE_AMOUNT = 4;          /* bites per pile */
@@ -21,8 +22,8 @@ export class FeedingSystem {
     this.terrain = terrain;
     this.effects = effects;
     this.audio = audio;
-    this.food = 4;               /* units in the player's pocket */
-    this.max = 12;
+    this.food = CONFIG.startFood;               /* units in the player's pocket */
+    this.max = CONFIG.maxFood;
     this.piles = [];
     this.totalFed = 0;           /* bites eaten - drives progress */
     this._nextId = 1;
@@ -43,7 +44,7 @@ export class FeedingSystem {
   /* place a pile on the ground; returns the pile or null */
   placeFood(x, z, y) {
     if (this.food <= 0) return null;
-    if (this.terrain.inPond(x, z)) return null;
+    if (!Number.isFinite(x) || !Number.isFinite(z) || !this.terrain.inBounds(x, z) || this.terrain.inPond(x, z)) return null;
     this.food--;
     const g = new THREE.Group();
     const mound = new THREE.Mesh(this.pileGeo, this.pileMat);
@@ -62,8 +63,8 @@ export class FeedingSystem {
 
     const pile = { id: this._nextId++, mesh: g, pos: g.position.clone(), amount: PILE_AMOUNT };
     this.piles.push(pile);
-    this.effects.sparkle(g.position.x, g.position.y + 0.2, g.position.z, '#ffe9a8', 6);
-    this.audio.feed();
+    this.effects?.sparkle(g.position.x, g.position.y + 0.2, g.position.z, '#ffe9a8', 6);
+    this.audio?.feed();
     return pile;
   }
 
@@ -83,8 +84,8 @@ export class FeedingSystem {
     if (pile.amount <= 0) return false;
     pile.amount--;
     this.totalFed++;
-    this.effects.crumbs(pile.pos.x, pile.pos.y + 0.1, pile.pos.z, 3);
-    this.audio.munch();
+    this.effects?.crumbs(pile.pos.x, pile.pos.y + 0.1, pile.pos.z, 3);
+    this.audio?.munch();
     /* shrink the mound as it is eaten */
     const k = 0.35 + 0.65 * (pile.amount / PILE_AMOUNT);
     pile.mesh.scale.setScalar(k);

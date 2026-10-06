@@ -47,15 +47,23 @@ export class Terrain {
   /* ------------------------------------------------------------- lawn */
   _buildLawn() {
     const R = 70, seg = 72;
-    const geo = new THREE.CircleGeometry(R, seg, 0, TAU);
+    const geo = new THREE.PlaneGeometry(R * 2, R * 2, seg, seg);
     geo.rotateX(-Math.PI / 2);
     const p = geo.attributes.position;
     for (let i = 0; i < p.count; i++) {
       p.setY(i, this.heightAt(p.getX(i), p.getZ(i)));
     }
     geo.computeVertexNormals();
+    const colors = new Float32Array(p.count * 3), tint = new THREE.Color();
+    for (let i=0;i<p.count;i++) {
+      const x=p.getX(i), z=p.getZ(i);
+      const patch=Math.sin(x*0.17)*Math.cos(z*0.14)*0.025;
+      tint.setHSL(0.235 + patch, 0.27, 0.48 + patch);
+      tint.toArray(colors,i*3);
+    }
+    geo.setAttribute('color',new THREE.BufferAttribute(colors,3));
     this.lawnMat = new THREE.MeshStandardMaterial({
-      color: 0x3e8a44, roughness: 1, metalness: 0
+      color: 0xffffff, vertexColors: true, roughness: 1, metalness: 0
     });
     this.lawn = new THREE.Mesh(geo, this.lawnMat);
     this.lawn.receiveShadow = true;
@@ -66,22 +74,23 @@ export class Terrain {
     const blade = new THREE.ConeGeometry(0.045, 0.5, 3, 1, true);
     blade.translate(0, 0.25, 0);
     const grassMat = swayMaterial(
-      { color: 0x4da75c, roughness: 1, side: THREE.DoubleSide },
+      { color: 0xffffff, roughness: 1, side: THREE.DoubleSide },
       { stiffness: 0.34, gust: 1.35 }
     );
     this.grass = new THREE.InstancedMesh(blade, grassMat, n);
     const dummy = new THREE.Object3D();
     const col = new THREE.Color();
     for (let i = 0; i < n; i++) {
-      const a = rand(TAU), r = Math.sqrt(Math.random()) * 62;
+      const a = rand(TAU), r = Math.sqrt(rand()) * 62;
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if (this.inPond(x, z) || this.isOnSoil(x, z, 0.4)) { i--; continue; }
       dummy.position.set(x, this.heightAt(x, z), z);
       dummy.rotation.y = rand(TAU);
       const s = rand(0.6, 1.5);
       dummy.scale.set(s, s * rand(0.7, 1.6), s);
       dummy.updateMatrix();
       this.grass.setMatrixAt(i, dummy.matrix);
-      col.setHSL(0.33 + rand(-0.03, 0.03), 0.5 + rand(-0.1, 0.12), 0.34 + rand(-0.08, 0.12));
+      col.setHSL(0.24 + rand(-0.025, 0.025), 0.5 + rand(-0.1, 0.12), 0.44 + rand(-0.06, 0.12));
       this.grass.setColorAt(i, col);
     }
     this.grass.instanceMatrix.needsUpdate = true;
@@ -120,7 +129,7 @@ export class Terrain {
 
   isOnPath(x, z) {
     if (!this.pathCurve) return false;
-    const p = this.pathCurve.getPoints(80);
+    const p = this._pathPoints || (this._pathPoints = this.pathCurve.getPoints(80));
     for (const q of p) {
       if ((q.x - x) * (q.x - x) + (q.z - z) * (q.z - z) < 1.7) return true;
     }
@@ -143,7 +152,7 @@ export class Terrain {
       new THREE.Vector3(12, 0, -9)
     ]);
     const stone = new THREE.CylinderGeometry(1, 1, 0.16, 7);
-    const mat = new THREE.MeshStandardMaterial({ color: 0xa9a094, roughness: 0.95 });
+    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 });
     const n = 34;
     this.pathStones = new THREE.InstancedMesh(stone, mat, n);
     this.pathStones.receiveShadow = true;
@@ -192,11 +201,11 @@ export class Terrain {
     this.waterGeo.rotateX(-Math.PI / 2);
     this.waterBase = this.waterGeo.attributes.position.array.slice();
     this.waterMat = new THREE.MeshStandardMaterial({
-      color: 0x3f8fbf, transparent: true, opacity: 0.82,
+      color: 0x78bcb7, transparent: true, opacity: 0.82,
       roughness: 0.15, metalness: 0.1
     });
     this.water = new THREE.Mesh(this.waterGeo, this.waterMat);
-    this.water.position.set(c.x, bank.position.y - 0.12, c.z);
+    this.water.position.set(c.x, bank.position.y + 0.1, c.z);
     this.group.add(this.water);
 
     /* lily pads */
@@ -211,8 +220,8 @@ export class Terrain {
       pad.receiveShadow = true;
       this.group.add(pad);
     }
-    function waterLevel(b) { return b.position.y - 0.12; }
-    this.waterY = bank.position.y - 0.12;
+    function waterLevel(b) { return b.position.y + 0.1; }
+    this.waterY = bank.position.y + 0.1;
 
     /* reeds around the rim */
     const reed = swayMaterial(

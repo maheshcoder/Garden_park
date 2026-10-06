@@ -1,8 +1,17 @@
 /* Shared, cycle-free helpers used across the 3D garden modules. */
 export const TAU = Math.PI * 2;
-export const rand = (a = 1, b) => (b === undefined ? Math.random() * a : a + Math.random() * (b - a));
+let randomSource = Math.random;
+export function seededRandom(seed = 48271) {
+  return () => { seed = Math.imul(seed ^ seed >>> 15, 1 | seed); seed ^= seed + Math.imul(seed ^ seed >>> 7, 61 | seed); return ((seed ^ seed >>> 14) >>> 0) / 4294967296; };
+}
+export function withSeed(seed, build) {
+  const previous = randomSource;
+  randomSource = seededRandom(seed);
+  try { return build(); } finally { randomSource = previous; }
+}
+export const rand = (a = 1, b) => (b === undefined ? randomSource() * a : a + randomSource() * (b - a));
 export const randInt = (a, b) => Math.floor(rand(a, b + 1));
-export const pick = (arr) => arr[(Math.random() * arr.length) | 0];
+export const pick = (arr) => arr[(randomSource() * arr.length) | 0];
 export const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 export const lerp = (a, b, t) => a + (b - a) * t;
 export const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);

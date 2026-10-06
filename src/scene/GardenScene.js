@@ -21,7 +21,8 @@ export class GardenScene {
     this.renderer.shadowMap.enabled = tier.shadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.NoToneMapping;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.18;
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(52, 1, 0.1, 600);
@@ -29,9 +30,11 @@ export class GardenScene {
     /* camera orbits a point on the lawn; the player controller drives
        yaw/pitch/target, this class only places the eye              */
     this.camTarget = new THREE.Vector3(0, 1.2, 0);
-    this.yaw = 0;
-    this.pitch = 24 * DEG;
-    this.dist = 11;
+    this.yaw = 0.08;
+    this.pitch = 25 * DEG;
+    this.dist = 18;
+    this._cameraTarget = new THREE.Vector3();
+    this._cameraReady = false;
 
     this._buildLights();
     this._buildSky();
@@ -95,6 +98,8 @@ export class GardenScene {
         void main() {
           float h = clamp(normalize(vPos).y * 1.6 + 0.28, 0.0, 1.0);
           gl_FragColor = vec4(mix(bot, top, pow(h, 0.75)), 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
         }`
     });
     this.dome = new THREE.Mesh(domeGeo, domeMat);
@@ -151,7 +156,7 @@ export class GardenScene {
     this.rainbow = this._buildRainbow();
 
     /* fog ties the far lawn into the sky colour instead of a hard edge */
-    this.scene.fog = new THREE.Fog(0xd6f1ff, 60, 240);
+    this.scene.fog = new THREE.Fog(0xd6f1ff, 42, 155);
   }
 
   _buildRainbow() {
@@ -185,7 +190,7 @@ export class GardenScene {
     this.rainbow.material.opacity = t * 0.65;
     this.rainbow.visible = t > 0.02;
     if (t > 0.02 && playerPos) {
-      const breathe = 1 + Math.sin(performance.now() * 0.3) * 0.02;
+      const breathe = 1 + Math.sin(performance.now() * 0.0003) * 0.02;
       this.rainbow.scale.set(48 * breathe, 48 * breathe, 1);
       this.rainbow.position.set(playerPos.x, playerPos.y + 4, playerPos.z);
     }
@@ -246,8 +251,8 @@ export class GardenScene {
     const hemiG = parseColor(sky.gLight);
     this.hemi.color.setRGB(hemiC.r / 255, hemiC.g / 255, hemiC.b / 255);
     this.hemi.groundColor.setRGB(hemiG.r / 255, hemiG.g / 255, hemiG.b / 255);
-    this.hemi.intensity = day ? 0.85 : 0.42;
-    this.fill.intensity = day ? 0.28 : 0.1;
+    this.hemi.intensity = 0.85;
+    this.fill.intensity = day ? 0.28 : 0.24;
   }
 
   toggleDayNight() {
@@ -258,16 +263,19 @@ export class GardenScene {
   /* --------------------------------------------------- camera placement */
   setCameraTarget(x, y, z) { this.camTarget.set(x, y, z); }
 
-  applyCamera() {
+  applyCamera(dt = 1 / 60) {
+    if (!this._cameraReady) { this._cameraTarget.copy(this.camTarget); this._cameraReady = true; }
+    this._cameraTarget.lerp(this.camTarget, 1 - Math.exp(-dt * 9));
+    const target = this._cameraTarget;
     const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
     this.camera.position.set(
-      this.camTarget.x + Math.sin(this.yaw) * cp * this.dist,
-      this.camTarget.y + sp * this.dist,
-      this.camTarget.z + Math.cos(this.yaw) * cp * this.dist
+      target.x + Math.sin(this.yaw) * cp * this.dist,
+      target.y + sp * this.dist,
+      target.z + Math.cos(this.yaw) * cp * this.dist
     );
     /* never let the eye sink through the lawn */
     this.camera.position.y = Math.max(this.camera.position.y, 0.8);
-    this.camera.lookAt(this.camTarget);
+    this.camera.lookAt(target);
   }
 
   resize() {
@@ -281,14 +289,28 @@ export class GardenScene {
     this.renderer.render(this.scene, this.camera);
   }
 
+  dispose() {
+    const geometries = new Set(), materials = new Set(), textures = new Set();
+    this.scene.traverse(object => {
+      if (object.geometry) geometries.add(object.geometry);
+      const list = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of list) if (material) {
+        materials.add(material);
+        for (const value of Object.values(material)) if (value?.isTexture) textures.add(value);
+      }
+    });
+    for (const resource of [...geometries, ...materials, ...textures]) resource.dispose();
+    this.renderer.dispose();
+  }
+
   /* quality tiers for mobile vs desktop */
   static tierFor() {
     const coarse = matchMedia('(pointer: coarse)').matches;
     const small = Math.min(screen.width, screen.height) < 820;
-    const mobile = coarse && small;
+    const mobile = (coarse && small) || new URLSearchParams(location.search).get('quality') === 'low';
     return mobile
-      ? { aa: false, dpr: 1.5, shadows: false, shadowSize: 512, grass: 1400, stars: 260, petals: 90, pollen: 40, rain: 260 }
-      : { aa: true, dpr: 2, shadows: true, shadowSize: 2048, grass: 5200, stars: 620, petals: 220, pollen: 140, rain: 700 };
+      ? { aa: false, dpr: 1.25, shadows: false, shadowSize: 512, grass: 1400, stars: 260, petals: 90, pollen: 40, rain: 260 }
+      : { aa: true, dpr: 1.5, shadows: true, shadowSize: 2048, grass: 5200, stars: 620, petals: 220, pollen: 140, rain: 700 };
   }
 }
 

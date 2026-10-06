@@ -34,6 +34,7 @@ export class Joystick {
       this.active = true;
       this.pointerId = e.pointerId;
       const r = this.stick.getBoundingClientRect();
+      this.radius = (r.width - (this.nub?.offsetWidth || 40)) / 2;
       this.center.x = r.left + r.width / 2;
       this.center.y = r.top + r.height / 2;
       this.stick.setPointerCapture(e.pointerId);
@@ -55,6 +56,12 @@ export class Joystick {
     this.stick.addEventListener('pointermove', move);
     this.stick.addEventListener('pointerup', up);
     this.stick.addEventListener('pointercancel', up);
+    this.stick.addEventListener('lostpointercapture', up);
+    window.addEventListener('blur', () => {
+      this.active = false; this.pointerId = null;
+      this.controller.joy.x = this.controller.joy.y = 0;
+      if (this.nub) this.nub.style.transform = '';
+    });
   }
 
   _apply(cx, cy) {
@@ -69,8 +76,7 @@ export class Joystick {
 
   _bindAct() {
     if (!this.act) return;
-    this.act.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
+    this.act.addEventListener('click', () => {
       if (this.onInteract) this.onInteract();
     });
   }

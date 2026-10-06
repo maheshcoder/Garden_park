@@ -193,16 +193,17 @@ export class Flowers {
   /* returns the flower record or null when the garden/caps are full */
   plant(x, z, type) {
     if (this.flowers.length >= CONFIG.maxFlowers) return null;
-    if (this.terrain.inPond(x, z)) return null;
+    if (!Number.isFinite(x) || !Number.isFinite(z) || !this.terrain.inBounds(x, z) || this.terrain.inPond(x, z)) return null;
     type = FLOWER_SPECS[type] ? type : pick(SEEDS);
     const spec = FLOWER_SPECS[type];
-    const slot = this.slotNext[type]++;
+    const slot = this.slotNext[type];
     if (slot >= CONFIG.flowerCapacityPerSpecies) return null;
+    this.slotNext[type]++;
 
     const f = {
       type, spec, slot,
       x, z,
-      y: this.terrain.heightAt(x, z),
+      y: this.terrain.heightAt(x, z) + (this.terrain.isOnSoil(x, z) ? 0.27 : 0),
       color: pick(spec.colors),
       stemColor: spec.stem,
       /* spec: health / growth / waterLevel */
@@ -217,12 +218,15 @@ export class Flowers {
     /* spec-shaped API: Plant { health, growth, waterLevel, watered() } */
     f.watered = () => this.water(f);
     this.flowers.push(f);
+    this.stemMesh.count = this.flowers.length;
+    this.headMeshes[type].count = this.slotNext[type];
     this._sync(f);
     return f;
   }
 
   /* classic right-click removal: no pick counted */
   remove(f) {
+    if (!f || f.dead || !this.flowers.includes(f)) return false;
     f.dead = true;
     this._hide(f);
     const i = this.flowers.indexOf(f);
@@ -234,6 +238,7 @@ export class Flowers {
 
   /* hand tool: pick -> counted, petals burst by caller */
   pick(f) {
+    if (!f || f.dead || !this.flowers.includes(f)) return false;
     this.picked++;
     return this.remove(f);
   }
@@ -317,7 +322,7 @@ export class Flowers {
     dummy.scale.set(f.scale * (0.7 + 0.3 * grow), h, f.scale * (0.7 + 0.3 * grow));
     dummy.updateMatrix();
     this.stemMesh.setMatrixAt(f.stemSlot, dummy.matrix);
-    this.stemMesh.setColorAt(f.stemSlot, new THREE.Color(f.stemColor));
+    this.stemMesh.setColorAt(f.stemSlot, new THREE.Color(f.stemColor).lerp(new THREE.Color(0x9b8748), 1 - f.health));
 
     /* head: sits on top of the stem, tilts slightly when hovered */
     const hm = this.headMeshes[f.type];
@@ -343,7 +348,8 @@ export class Flowers {
       /* water is consumed over time; the classic 2D garden drains
          at roughly this rate, keeping watering meaningful          */
       const before = f.growth;
-      f.waterLevel = Math.max(0, f.waterLevel - dt * 0.035);
+      const previousHealth = f.health;
+      f.waterLevel = Math.max(0, Math.min(1, f.waterLevel + dt * ((this.rain || 0) * 0.08 - 0.0035)));
       f.waterT += dt;
       f.hoverT = Math.max(0, f.hoverT - dt * 1.5);
 
@@ -361,7 +367,7 @@ export class Flowers {
       }
 
       /* re-sync while growing or when a water pulse is visible */
-      if (f.growth < 1 || before !== f.growth || f.waterT < 1.2 || f.hoverT > 0.01) {
+      if (f.growth < 1 || before !== f.growth || previousHealth !== f.health || f.waterT < 1.2 || f.hoverT > 0.01) {
         this._sync(f);
         dirty = true;
       }

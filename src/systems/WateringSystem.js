@@ -16,6 +16,7 @@ export class WateringSystem {
     this.max = CONFIG.maxWater;
     this.sprayT = 0;                   /* accumulates droplet emission   */
     this.pouring = false;
+    this.wateredPlants = new WeakSet();
     this.totalWatered = 0;             /* drives the ⭐ progress goal     */
   }
 
@@ -29,33 +30,33 @@ export class WateringSystem {
     /* ~14 droplets/second */
     while (this.sprayT > 1 / 14) {
       this.sprayT -= 1 / 14;
-      this.effects.droplet(fromPos.x, fromPos.y, fromPos.z, targetPos.x, targetPos.y, targetPos.z);
+      this.effects?.droplet(fromPos.x, fromPos.y, fromPos.z, targetPos.x, targetPos.y, targetPos.z);
     }
     return true;
   }
 
-  stop() { this.pouring = false; }
+  stop() { this.pouring = false; this._carry = 0; this.sprayT = 0; }
 
   /* one-shot: water a single plant (E interaction) */
   waterPlant(plant, canPos) {
     if (this.amount <= 0) return false;
     this.amount--;
-    this.totalWatered++;
+    if (!this.wateredPlants.has(plant)) { this.wateredPlants.add(plant); this.totalWatered++; }
     plant.watered();
     const head = plant.headPos ? plant.headPos() : new THREE.Vector3(plant.x, plant.y + 0.6, plant.z);
     for (let i = 0; i < 8; i++) {
-      this.effects.droplet(canPos.x, canPos.y, canPos.z, head.x, head.y, head.z);
+      this.effects?.droplet(canPos.x, canPos.y, canPos.z, head.x, head.y, head.z);
     }
-    this.effects.sparkle(head.x, head.y, head.z, '#9fd8ff', 5);
-    this.audio.water();
+    this.effects?.sparkle(head.x, head.y, head.z, '#9fd8ff', 5);
+    this.audio?.water();
     return true;
   }
 
   refill(pondPos) {
     if (this.amount >= this.max) return false;
     this.amount = this.max;
-    this.effects.sparkle(pondPos.x, pondPos.y + 0.3, pondPos.z, '#cdeaff', 10);
-    this.audio.refill();
+    this.effects?.sparkle(pondPos.x, pondPos.y + 0.3, pondPos.z, '#cdeaff', 10);
+    this.audio?.refill();
     return true;
   }
 
@@ -68,7 +69,9 @@ export class WateringSystem {
     if (this._carry >= 1) {
       this._carry -= 1;
       this.amount = Math.max(0, this.amount - 1);
-      this.totalWatered++;
+      if (targetPlant && !this.wateredPlants.has(targetPlant)) {
+        this.wateredPlants.add(targetPlant); this.totalWatered++;
+      }
       if (targetPlant) targetPlant.watered();
     }
     return true;
