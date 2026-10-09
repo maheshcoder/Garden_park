@@ -1,67 +1,21 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <meta name="description" content="An interactive canvas garden with flowers and butterflies that you can control." />
-  <title>Enchanted Garden &middot; Flowers &amp; Butterflies</title>
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <canvas id="garden" aria-label="Interactive garden with flowers and butterflies"></canvas>
-
-  <header id="hud">
-    <h1>&#127802; Enchanted Garden</h1>
-    <div class="stats">
-      <span class="chip" title="flowers in the garden">&#127804; <b id="statFlowers">0</b></span>
-      <span class="chip" title="butterflies flying">&#129419; <b id="statButterflies">0</b></span>
-      <span class="chip" title="flowers you picked">&#128090; <b id="statPicked">0</b></span>
-      <span class="chip" title="time of day">&#128337; <b id="statTime">09:00</b></span>
-      <span class="chip" id="statWeather">&#9728;&#65039; Clear</span>
-    </div>
-  </header>
-
-  <aside id="panel">
-    <div class="panel-title">Controls</div>
-
-    <div class="row">
-      <label for="seedSelect">Seed</label>
-      <select id="seedSelect">
-        <option value="random">&#127922; Random</option>
-        <option value="rose">&#127801; Rose</option>
-        <option value="daisy">&#127804; Daisy</option>
-        <option value="sunflower">&#127799; Sunflower</option>
-        <option value="tulip">&#127807; Tulip</option>
-        <option value="lavender">&#128156; Lavender</option>
-      </select>
-    </div>
-
-    <div class="buttons">
-      <button id="btnFlower" type="button">&#127793; Plant</button>
-      <button id="btnButterfly" type="button">&#129419; Butterfly</button>
-      <button id="btnRain" type="button">&#127783; Rain</button>
-      <button id="btnDayNight" type="button">&#127769; Day / Night</button>
-      <button id="btnPause" type="button">&#10073;&#65039; Pause</button>
-      <button id="btnClear" type="button">&#129533; Clear</button>
-    </div>
-
-    <p class="hint" id="hint">
-      Move the mouse to gather butterflies &middot; click the grass to plant &middot;
-      click a flower to pick it &middot; right-click to remove
-    </p>
-  </aside>
-
-  <footer id="keys">
-    <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>
-    <span><kbd>Space</kbd> plant</span>
-    <span><kbd>E</kbd> water</span>
-    <span><kbd>B</kbd> butterfly</span>
-    <span><kbd>N</kbd> day/night</span>
-    <span><kbd>R</kbd> rain</span>
-    <span><kbd>C</kbd> clear</span>
-    <span><kbd>P</kbd> pause</span>
-  </footer>
-
-  <script src="script.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#f6f3e9" />
+    <meta
+      name="description"
+      content="A peaceful, playable 3D park. Wander through blossom groves, flower gardens and a sunlit pond."
+    />
+    <title>Blossom Park · A little room to wander</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
